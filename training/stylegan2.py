@@ -1,0 +1,562 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+import numpy as np
+
+from utils.constants import DEVICE
+
+
+class EqualizedLinear(nn.Module):
+    def __init__(self,
+                 in_dim,
+                 out_dim,
+                 bias=True, 
+                 bias_init=0,
+                 lr_multiplier=1,
+                 act_fn='LeakyReLU',
+                 act_kwargs={'negative_slope': 0.2}
+                ):
+        
+        super().__init__()
+        
+        if act_kwargs is None:
+            act_kwargs = {}
+        self.activation = getattr(nn, act_fn)(**act_kwargs)
+
+        self.weight = nn.Parameter(torch.randn([out_dim, in_dim], dtype=torch.float32) / lr_multiplier)
+        self.weight_scale = lr_multiplier / np.sqrt(in_dim)
+
+        self.bias = nn.Parameter(torch.full([out_dim], bias_init, dtype=torch.float32)) if bias else None
+        self.bias_scale = lr_multiplier
+
+    def forward(self, x):
+        W = self.weight * self.weight_scale
+        b = self.bias
+        if self.bias is not None:
+            b = b * self.bias_scale
+
+        return self.activation(F.linear(x, weight=W, bias=b))
+    
+
+class EqualizedConv2d(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size,
+                 stride=1,
+                 padding='same',
+                 dilation=1,
+                 groups=1,
+                 bias=True, 
+                 bias_init=0,
+                 lr_multiplier=1,
+                 act_fn='LeakyReLU',
+                 act_kwargs={'negative_slope': 0.2}
+                ):
+        
+        super().__init__()
+        
+        if act_kwargs is None:
+            act_kwargs = {}
+        self.activation = getattr(nn, act_fn)(**act_kwargs)
+
+        if type(kernel_size) is tuple:
+            kH, kW = kernel_size
+        else:
+            kH, kW = kernel_size, kernel_size
+
+        self.stride = stride
+        self.padding = padding
+        self.dilation = dilation
+        self.groups = groups
+
+        self.weight = nn.Parameter(torch.randn([out_channels, in_channels, kH, kW], dtype=torch.float32) / lr_multiplier)
+        self.weight_scale = lr_multiplier / np.sqrt(in_channels * kH * kW)
+
+        self.bias = nn.Parameter(torch.full([out_channels], bias_init, dtype=torch.float32)) if bias else None
+        self.bias_scale = lr_multiplier
+
+    def forward(self, x):
+        W = self.weight * self.weight_scale
+        b = self.bias
+        if self.bias is not None:
+            b = self.bias * self.bias_scale
+
+        return self.activation(F.conv2d(x, 
+                                        weight=W, 
+                                        bias=b, 
+                                        stride=self.stride, 
+                                        padding=self.padding,
+                                        dilation=self.dilation,
+                                        groups=self.groups))
+    
+
+class EqualizedConv2dModulated(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size,
+                 stride=1,
+                 padding='same',
+                 dilation=1,
+                 lr_multiplier=1,
+                 demodulate=True
+                ):
+        
+        super().__init__()
+
+        if type(kernel_size) is tuple:
+            kH, kW = kernel_size
+        else:
+            kH, kW = kernel_size, kernel_size
+
+        self.stride = stride
+        self.padding = padding
+        self.dilation = dilation
+        self.demodulate = demodulate
+
+        self.weight = nn.Parameter(torch.randn([out_channels, in_channels, kH, kW], dtype=torch.float32) / lr_multiplier)
+        self.weight_scale = lr_multiplier / np.sqrt(in_channels * kH * kW)
+
+    def forward(self, x, s):
+        # Scale weight
+        W = self.weight * self.weight_scale
+
+        # Modulate weight
+        s = s[:, None, :, None, None]
+        W = s * self.weight.unsqueeze(0) #* self.weight_scale
+
+        if self.demodulate:
+            # Demodulate weight
+            sigma = torch.sqrt(torch.sum(W**2, dim=(-3, -2, -1), keepdim=True) + 1e-8)
+            W = W / sigma
+
+        # Reshape input and weight such that convolution layer sees one sample 
+        # of batch_size groups (as detailed in Appendix B of StyleGan2 paper).
+        batch_size, _, height, width = x.shape
+        x = x.reshape(1, -1, height, width)
+
+        out_channels = W.shape[1]
+        W = W.reshape(batch_size * out_channels, *W.shape[-3:])
+
+        x = F.conv2d(x, 
+                    weight=W, 
+                    bias=None,
+                    stride=self.stride, 
+                    padding=self.padding,
+                    dilation=self.dilation,
+                    groups=batch_size)
+        
+        # Reshape and return output as a minibatch of batch_size samples
+        return x.reshape(batch_size, out_channels, *x.shape[-2:])
+    
+
+class ToRGB(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 w_dim,
+                 bias=True, 
+                 bias_init=0,
+                 lr_multiplier=1,
+                 act_fn='LeakyReLU',
+                 act_kwargs={'negative_slope': 0.2}
+                ):
+        
+        super().__init__()
+
+        if act_kwargs is None:
+            act_kwargs = {}
+        self.activation = getattr(nn, act_fn)(**act_kwargs)
+
+        self.style = EqualizedLinear(w_dim, 
+                                     in_channels, 
+                                     bias=bias, 
+                                     bias_init=1,
+                                     lr_multiplier=lr_multiplier,
+                                     act_fn=act_fn,
+                                     act_kwargs=act_kwargs)
+
+        self.conv = EqualizedConv2dModulated(in_channels,
+                                             out_channels=3,
+                                             kernel_size=1,
+                                             padding=0,
+                                             lr_multiplier=lr_multiplier,
+                                             demodulate=False)
+        
+        self.bias = nn.Parameter(torch.full([3], bias_init, dtype=torch.float32)) if bias else None
+        self.bias_scale = lr_multiplier
+    
+    def forward(self, x, w):
+        s = self.style(w)
+        x = self.conv(x, s)
+
+        if self.bias is not None:
+            b = self.bias * self.bias_scale
+            x = x + b[None, :, None, None]
+
+        return self.activation(x)
+
+class MappingNet(nn.Module):
+    def __init__(self, 
+                 z_dim, 
+                 w_dim, 
+                 num_layers=8,
+                 lr_multiplier=0.01,
+                 act_fn='LeakyReLU', 
+                 act_kwargs={'negative_slope': 0.2}
+                ):
+        
+        super().__init__()
+
+        if act_kwargs is None:
+            act_kwargs = {}
+        self.activation = getattr(nn, act_fn)(**act_kwargs)
+
+        layers = nn.ModuleList([EqualizedLinear(z_dim, 
+                                                     w_dim,  
+                                                     lr_multiplier=lr_multiplier, 
+                                                     act_fn=act_fn,
+                                                     act_kwargs=act_kwargs
+                                                     )])
+        layers.extend([EqualizedLinear(w_dim, 
+                                            w_dim,  
+                                            lr_multiplier=lr_multiplier, 
+                                            act_fn=act_fn,
+                                            act_kwargs=act_kwargs
+                                            ) for i in range(num_layers - 1)])
+        
+        self.seq = nn.Sequential(*layers)
+
+    def forward(self, z):
+        w = z / torch.sqrt(torch.mean(z**2, dim=1, keepdim=True) + 1e-8) # normalize input latent vectors (sampled from unit Gaussian)
+        w = self.seq(w)
+
+        # TODO: Implement exponential moving average and truncation
+
+        return w
+
+
+class StyleBlock(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 w_dim,
+                 kernel_size,
+                 stride=1,
+                 padding='same',
+                 dilation=1,
+                 bias=True, 
+                 bias_init=0,
+                 lr_multiplier=1,
+                 noise=True,
+                 act_fn='LeakyReLU',
+                 act_kwargs={'negative_slope': 0.2}
+                ):
+        
+        super().__init__()
+
+        if act_kwargs is None:
+            act_kwargs = {}
+        self.activation = getattr(nn, act_fn)(**act_kwargs)
+
+        self.style = EqualizedLinear(w_dim, 
+                                     in_channels, 
+                                     bias=bias, 
+                                     bias_init=1,
+                                     lr_multiplier=lr_multiplier,
+                                     act_fn=act_fn,
+                                     act_kwargs=act_kwargs)
+
+        self.conv = EqualizedConv2dModulated(in_channels,
+                                             out_channels,
+                                             kernel_size,
+                                             stride=stride,
+                                             padding=padding,
+                                             dilation=dilation,
+                                             lr_multiplier=lr_multiplier,
+                                             demodulate=True)
+        
+        self.bias = nn.Parameter(torch.full([out_channels], bias_init, dtype=torch.float32)) if bias else None
+        self.bias_scale = lr_multiplier
+
+        self.noise = nn.Parameter(torch.zeros([], dtype=torch.float32)) if noise else None
+        
+    def forward(self, x, w):
+        s = self.style(w)
+        x = self.conv(x, s)
+
+        if self.bias is not None:
+            b = self.bias * self.bias_scale
+            x = x + b[None, :, None, None]
+
+        if self.noise is not None:
+            batch_size = x.shape[0]
+            noise = torch.randn([batch_size, 1, *x.shape[-2:]], dtype=torch.float32, device=DEVICE) * self.noise
+            x = x + noise
+
+        return self.activation(x)
+
+
+class ResolutionBlock(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 w_dim,
+                 kernel_size,
+                 stride=1,
+                 padding='same',
+                 dilation=1,
+                 bias=True, 
+                 bias_init=0,
+                 lr_multiplier=1,
+                 noise=True,
+                 act_fn='LeakyReLU',
+                 act_kwargs={'negative_slope': 0.2}
+                ):
+
+        super().__init__()
+
+        self.style_block1 = StyleBlock(in_channels,
+                                       out_channels,
+                                       w_dim,
+                                       kernel_size,
+                                       stride=stride,
+                                       padding=padding,
+                                       dilation=dilation,
+                                       bias=bias,
+                                       bias_init=bias_init,
+                                       lr_multiplier=lr_multiplier,
+                                       noise=noise,
+                                       act_fn=act_fn,
+                                       act_kwargs=act_kwargs) 
+        
+        self.style_block2 = StyleBlock(out_channels,
+                                       out_channels,
+                                       w_dim,
+                                       kernel_size,
+                                       stride=stride,
+                                       padding=padding,
+                                       dilation=dilation,
+                                       bias=bias,
+                                       bias_init=bias_init,
+                                       lr_multiplier=lr_multiplier,
+                                       noise=noise,
+                                       act_fn=act_fn,
+                                       act_kwargs=act_kwargs) 
+        
+        self.tRGB = ToRGB(out_channels,
+                          w_dim,
+                          bias=bias,
+                          bias_init=bias_init,
+                          lr_multiplier=lr_multiplier,
+                          act_fn=act_fn,
+                          act_kwargs=act_kwargs) 
+
+    def forward(self, x, w):
+        x = self.style_block1(x, w)
+        x = self.style_block2(x, w)
+
+        rgb = self.tRGB(x, w)
+
+        return x, rgb
+
+
+class SynthesisNet(nn.Module):
+    def __init__(self,
+                 w_dim,
+                 final_res=256,
+                 n_features=[],
+                 kernel_size=3,
+                 stride=1,
+                 padding='same',
+                 dilation=1,
+                 bias=True, 
+                 bias_init=0,
+                 lr_multiplier=1,
+                 noise=True,
+                 act_fn='LeakyReLU',
+                 act_kwargs={'negative_slope': 0.2}
+                ):
+
+        super().__init__()
+
+        self.num_blocks = int(np.log2(final_res)) - 1
+        # print(self.num_blocks)
+        # If no custom per block output features were given, build default number of features
+        # (folowing the structure of ProgressiveGan)
+        if not n_features:
+            n = 512
+            for i in range(self.num_blocks):
+                if i > 3:
+                    n //= 2
+                n_features.append(n)
+
+        # print(n_features)
+
+        self.constant = nn.Parameter(torch.randn([1, n_features[0], 4, 4], dtype=torch.float32))
+        self.style_block = StyleBlock(n_features[0],
+                                      n_features[0],
+                                      w_dim,
+                                      kernel_size,
+                                      stride=stride,
+                                      padding=padding,
+                                      dilation=dilation,
+                                      bias=bias,
+                                      bias_init=bias_init,
+                                      lr_multiplier=lr_multiplier,
+                                      noise=noise,
+                                      act_fn=act_fn,
+                                      act_kwargs=act_kwargs)
+        self.tRGB = ToRGB(n_features[0],
+                          w_dim,
+                          bias=bias,
+                          bias_init=bias_init,
+                          lr_multiplier=lr_multiplier,
+                          act_fn=act_fn,
+                          act_kwargs=act_kwargs)
+        
+        self.blocks = nn.ModuleList([ResolutionBlock(n_features[i-1],
+                                                     n_features[i],
+                                                     w_dim,
+                                                     kernel_size,
+                                                     stride=stride,
+                                                     padding=padding,
+                                                     dilation=dilation,
+                                                     bias=bias,
+                                                     bias_init=bias_init,
+                                                     lr_multiplier=lr_multiplier,
+                                                     act_fn=act_fn,
+                                                     act_kwargs=act_kwargs)
+                                                     for i in range(1, self.num_blocks)])
+        
+    def forward(self, w):
+        batch_size = w.shape[0]
+        # print(w.shape)
+        w = w.unsqueeze(0).expand(self.num_blocks, *w.shape[-2:])
+        # print(w.shape)
+
+        x = self.constant
+        # print(x.shape)
+        x = x.expand(batch_size, *x.shape[-3:])
+        # print(x.shape)
+        x = self.style_block(x, w[0])
+        # print(x.shape)
+        rgb = self.tRGB(x, w[0])
+        # print(rgb.shape)
+        # print()
+        for i, block in enumerate(self.blocks):
+            x = F.interpolate(x, scale_factor=2, mode='bilinear')
+            rgb = F.interpolate(rgb, scale_factor=2, mode='bilinear')
+            # print(x.shape)
+            # print(rgb.shape)
+            x, tRGB = block(x, w[i+1])
+            # print(x.shape)
+            # print(tRGB.shape)
+            rgb += tRGB
+            # print()
+
+        return F.tanh(rgb)
+
+
+class Generator(nn.Module):
+    def __init__(self,
+                 z_dim,
+                 w_dim,
+                 final_res=256,
+                 synt_kwargs=None,
+                 map_kwargs=None
+                ):
+
+        super().__init__()
+
+        if synt_kwargs is None:
+            synt_kwargs = {}
+
+        if map_kwargs is None:
+            map_kwargs = {}
+
+        self.syntNet = SynthesisNet(w_dim, final_res, **synt_kwargs)
+        self.mapNet = MappingNet(z_dim, w_dim, **map_kwargs)
+
+    def forward(self, z):
+        w = self.mapNet(z)
+        return self.syntNet(w)
+    
+
+class DiscriminatorBlock(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size,
+                 stride=1,
+                 padding='same',
+                 dilation=1,
+                 bias=True, 
+                 bias_init=0,
+                 lr_multiplier=1,
+                 act_fn='LeakyReLU',
+                 act_kwargs={'negative_slope': 0.2}):
+        
+        super().__init__()
+
+        self.conv1 = EqualizedConv2d(in_channels,
+                                     out_channels,
+                                     kernel_size=kernel_size,
+                                     stride=stride,
+                                     padding=padding,
+                                     dilation=dilation,
+                                     bias=bias,
+                                     bias_init=bias_init,
+                                     lr_multiplier=lr_multiplier,
+                                     act_fn=act_fn,
+                                     act_kwargs=act_kwargs)
+        
+        self.conv2 = EqualizedConv2d(out_channels,
+                                     out_channels,
+                                     kernel_size=kernel_size,
+                                     stride=stride,
+                                     padding=padding,
+                                     dilation=dilation,
+                                     bias=bias,
+                                     bias_init=bias_init,
+                                     lr_multiplier=lr_multiplier,
+                                     act_fn=act_fn,
+                                     act_kwargs=act_kwargs)
+        
+        self.residual_conv = EqualizedConv2d(in_channels,
+                                             out_channels,
+                                             kernel_size=1,
+                                             stride=stride,
+                                             padding=padding,
+                                             dilation=dilation,
+                                             bias=bias,
+                                             bias_init=bias_init,
+                                             lr_multiplier=lr_multiplier,
+                                             act_fn=act_fn,
+                                             act_kwargs=act_kwargs)
+
+        self.scale = 1 / np.sqrt(2) # Scale back the doubling of signal variance caused by residual connection
+
+    def forward(self, x):
+        # print(x.shape)
+        res = F.interpolate(x, scale_factor=0.5, mode='bilinear')
+        res = self.residual_conv(res)
+        # print(res.shape)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = F.interpolate(x, scale_factor=0.5, mode='bilinear')
+        # print(x.shape)
+        x = x + res
+        return x * self.scale
+    
+
+class Discriminator(nn.Module):
+    def __init__():
+
+        super().__init__()
+        raise NotImplementedError
+    
+
+if __name__ == '__main__':
+    pass

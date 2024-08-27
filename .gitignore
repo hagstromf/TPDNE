@@ -1,0 +1,8 @@
+# Ignore datafolder
+data/
+
+# Ignore caches
+*cache*
+
+# Ignore notebooks
+*.ipynb
