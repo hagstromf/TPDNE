@@ -214,17 +214,17 @@ class MappingNet(nn.Module):
         self.activation = getattr(nn, act_fn)(**act_kwargs)
 
         layers = nn.ModuleList([EqualizedLinear(z_dim, 
-                                                     w_dim,  
-                                                     lr_multiplier=lr_multiplier, 
-                                                     act_fn=act_fn,
-                                                     act_kwargs=act_kwargs
-                                                     )])
+                                                w_dim,  
+                                                lr_multiplier=lr_multiplier, 
+                                                act_fn=act_fn,
+                                                act_kwargs=act_kwargs
+                                                )])
         layers.extend([EqualizedLinear(w_dim, 
-                                            w_dim,  
-                                            lr_multiplier=lr_multiplier, 
-                                            act_fn=act_fn,
-                                            act_kwargs=act_kwargs
-                                            ) for i in range(num_layers - 1)])
+                                    w_dim,  
+                                    lr_multiplier=lr_multiplier, 
+                                    act_fn=act_fn,
+                                    act_kwargs=act_kwargs
+                                    ) for i in range(num_layers - 1)])
         
         self.seq = nn.Sequential(*layers)
 
@@ -356,17 +356,15 @@ class ResolutionBlock(nn.Module):
     def forward(self, x, w):
         x = self.style_block1(x, w)
         x = self.style_block2(x, w)
-
         rgb = self.tRGB(x, w)
-
         return x, rgb
 
 
 class SynthesisNet(nn.Module):
     def __init__(self,
                  w_dim,
-                 final_res=256,
-                 n_features=[],
+                 out_res=256,
+                 n_channels=[],
                  kernel_size=3,
                  stride=1,
                  padding='same',
@@ -381,22 +379,20 @@ class SynthesisNet(nn.Module):
 
         super().__init__()
 
-        self.num_blocks = int(np.log2(final_res)) - 1
-        # print(self.num_blocks)
-        # If no custom per block output features were given, build default number of features
-        # (folowing the structure of ProgressiveGan)
-        if not n_features:
+        self.num_blocks = int(np.log2(out_res)) - 1
+
+        # If no custom per resolution block output channels were given, build default number 
+        # of channels (folowing the structure of ProgressiveGan)
+        if not n_channels:
             n = 512
             for i in range(self.num_blocks):
                 if i > 3:
-                    n //= 2
-                n_features.append(n)
+                    n = n // 2 if n > 4 else n # Stop n from going below 4 channels
+                n_channels.append(n)
 
-        # print(n_features)
-
-        self.constant = nn.Parameter(torch.randn([1, n_features[0], 4, 4], dtype=torch.float32))
-        self.style_block = StyleBlock(n_features[0],
-                                      n_features[0],
+        self.constant = nn.Parameter(torch.randn([1, n_channels[0], 4, 4], dtype=torch.float32))
+        self.style_block = StyleBlock(n_channels[0],
+                                      n_channels[0],
                                       w_dim,
                                       kernel_size,
                                       stride=stride,
@@ -408,7 +404,7 @@ class SynthesisNet(nn.Module):
                                       noise=noise,
                                       act_fn=act_fn,
                                       act_kwargs=act_kwargs)
-        self.tRGB = ToRGB(n_features[0],
+        self.tRGB = ToRGB(n_channels[0],
                           w_dim,
                           bias=bias,
                           bias_init=bias_init,
@@ -416,8 +412,8 @@ class SynthesisNet(nn.Module):
                           act_fn=act_fn,
                           act_kwargs=act_kwargs)
         
-        self.blocks = nn.ModuleList([ResolutionBlock(n_features[i-1],
-                                                     n_features[i],
+        self.blocks = nn.ModuleList([ResolutionBlock(n_channels[i-1],
+                                                     n_channels[i],
                                                      w_dim,
                                                      kernel_size,
                                                      stride=stride,
@@ -432,29 +428,19 @@ class SynthesisNet(nn.Module):
         
     def forward(self, w):
         batch_size = w.shape[0]
-        # print(w.shape)
         w = w.unsqueeze(0).expand(self.num_blocks, *w.shape[-2:])
-        # print(w.shape)
 
         x = self.constant
-        # print(x.shape)
         x = x.expand(batch_size, *x.shape[-3:])
-        # print(x.shape)
         x = self.style_block(x, w[0])
-        # print(x.shape)
         rgb = self.tRGB(x, w[0])
-        # print(rgb.shape)
-        # print()
+
         for i, block in enumerate(self.blocks):
             x = F.interpolate(x, scale_factor=2, mode='bilinear')
             rgb = F.interpolate(rgb, scale_factor=2, mode='bilinear')
-            # print(x.shape)
-            # print(rgb.shape)
+
             x, tRGB = block(x, w[i+1])
-            # print(x.shape)
-            # print(tRGB.shape)
             rgb += tRGB
-            # print()
 
         return F.tanh(rgb)
 
@@ -463,7 +449,7 @@ class Generator(nn.Module):
     def __init__(self,
                  z_dim,
                  w_dim,
-                 final_res=256,
+                 out_res=256,
                  synt_kwargs=None,
                  map_kwargs=None
                 ):
@@ -476,7 +462,7 @@ class Generator(nn.Module):
         if map_kwargs is None:
             map_kwargs = {}
 
-        self.syntNet = SynthesisNet(w_dim, final_res, **synt_kwargs)
+        self.syntNet = SynthesisNet(w_dim, out_res, **synt_kwargs)
         self.mapNet = MappingNet(z_dim, w_dim, **map_kwargs)
 
     def forward(self, z):
@@ -501,7 +487,7 @@ class DiscriminatorBlock(nn.Module):
         super().__init__()
 
         self.conv1 = EqualizedConv2d(in_channels,
-                                     out_channels,
+                                     in_channels,
                                      kernel_size=kernel_size,
                                      stride=stride,
                                      padding=padding,
@@ -512,7 +498,7 @@ class DiscriminatorBlock(nn.Module):
                                      act_fn=act_fn,
                                      act_kwargs=act_kwargs)
         
-        self.conv2 = EqualizedConv2d(out_channels,
+        self.conv2 = EqualizedConv2d(in_channels,
                                      out_channels,
                                      kernel_size=kernel_size,
                                      stride=stride,
@@ -539,24 +525,119 @@ class DiscriminatorBlock(nn.Module):
         self.scale = 1 / np.sqrt(2) # Scale back the doubling of signal variance caused by residual connection
 
     def forward(self, x):
-        # print(x.shape)
         res = F.interpolate(x, scale_factor=0.5, mode='bilinear')
         res = self.residual_conv(res)
-        # print(res.shape)
+
         x = self.conv1(x)
         x = self.conv2(x)
         x = F.interpolate(x, scale_factor=0.5, mode='bilinear')
-        # print(x.shape)
+
         x = x + res
         return x * self.scale
     
 
 class Discriminator(nn.Module):
-    def __init__():
-
+    def __init__(self,
+                 in_res,
+                 n_channels=[],
+                 kernel_size=3,
+                 stride=1,
+                 padding='same',
+                 dilation=1,
+                 bias=True, 
+                 bias_init=0,
+                 lr_multiplier=1,
+                 act_fn='LeakyReLU',
+                 act_kwargs={'negative_slope': 0.2}
+                ):
+        
         super().__init__()
-        raise NotImplementedError
-    
+        
+        self.num_blocks = int(np.log2(in_res)) - 1
+        # print(self.num_blocks)
+        # If no custom per discrimator block output channels were given, build default number 
+        # of channels (folowing the structure of ProgressiveGan)
+        if not n_channels:
+            n = 512
+            for i in range(self.num_blocks):
+                if i > 3:
+                    n = n // 2 if n > 4 else n # Stop n from going below 4 channels
+                n_channels.append(n)
+        n_channels.reverse()
+        print(n_channels)
+
+        self.fRGB = EqualizedConv2d(in_channels=3, 
+                                    out_channels=n_channels[0],
+                                    kernel_size=1,
+                                    stride=stride,
+                                    padding=padding,
+                                    dilation=dilation,
+                                    bias=bias,
+                                    bias_init=bias_init,
+                                    lr_multiplier=lr_multiplier,
+                                    act_fn=act_fn,
+                                    act_kwargs=act_kwargs)
+        
+        blocks = nn.ModuleList([DiscriminatorBlock(n_channels[i-1],
+                                                   n_channels[i],
+                                                   kernel_size,
+                                                   stride=stride,
+                                                   padding=padding,
+                                                   dilation=dilation,
+                                                   bias=bias,
+                                                   bias_init=bias_init,
+                                                   lr_multiplier=lr_multiplier,
+                                                   act_fn=act_fn,
+                                                   act_kwargs=act_kwargs)
+                                                   for i in range(1, self.num_blocks)])
+        
+        self.seq = nn.Sequential(*blocks)
+
+        # Post minibatch standard deviation layers
+        self.conv = EqualizedConv2d(in_channels=n_channels[-1] + 1, 
+                                    out_channels=n_channels[-1],
+                                    kernel_size=kernel_size,
+                                    stride=stride,
+                                    padding=padding,
+                                    dilation=dilation,
+                                    bias=bias,
+                                    bias_init=bias_init,
+                                    lr_multiplier=lr_multiplier,
+                                    act_fn=act_fn,
+                                    act_kwargs=act_kwargs)
+        
+        self.fc = EqualizedLinear(in_dim=n_channels[-1] * 4 * 4, 
+                                  out_dim=n_channels[-1],
+                                  bias=bias,
+                                  bias_init=bias_init,
+                                  lr_multiplier=lr_multiplier,
+                                  act_fn=act_fn,
+                                  act_kwargs=act_kwargs)
+        
+        self.out = EqualizedLinear(in_dim=n_channels[-1], 
+                                  out_dim=1,
+                                  bias=bias,
+                                  bias_init=bias_init,
+                                  lr_multiplier=lr_multiplier,
+                                  act_fn=act_fn,
+                                  act_kwargs=act_kwargs)
+        
+    def minibatch_std(self, x):
+        # TODO: Implement minibatch std
+        return x
+
+    def forward(self, x):
+        x = self.fRGB(x)
+        print(x.shape)
+        x = self.seq(x)
+        print(x.shape)
+
+        x = self.minibatch_std(x)  
+        print(x.shape)
+        x = self.fc(x.flatten(1))
+        print(x.shape)
+        return self.out(x)     
+
 
 if __name__ == '__main__':
     pass
