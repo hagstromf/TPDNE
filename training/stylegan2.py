@@ -196,6 +196,7 @@ class ToRGB(nn.Module):
             x = x + b[None, :, None, None]
 
         return self.activation(x)
+    
 
 class MappingNet(nn.Module):
     def __init__(self, 
@@ -422,6 +423,7 @@ class SynthesisNet(nn.Module):
                                                      bias=bias,
                                                      bias_init=bias_init,
                                                      lr_multiplier=lr_multiplier,
+                                                     noise=noise,
                                                      act_fn=act_fn,
                                                      act_kwargs=act_kwargs)
                                                      for i in range(1, self.num_blocks)])
