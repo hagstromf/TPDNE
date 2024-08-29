@@ -623,19 +623,19 @@ class Discriminator(nn.Module):
                                   act_kwargs=act_kwargs)
         
     def minibatch_std(self, x):
-        # TODO: Implement minibatch std
+        y = torch.std(x, dim=0)
+        y = torch.mean(y)
+        y = y.repeat(x.shape[0], 1, *x.shape[-2:])
+
+        x = torch.cat([x, y], dim=1)
         return x
 
     def forward(self, x):
         x = self.fRGB(x)
-        print(x.shape)
         x = self.seq(x)
-        print(x.shape)
-
-        x = self.minibatch_std(x)  
-        print(x.shape)
+        x = self.minibatch_std(x) 
+        x = self.conv(x)
         x = self.fc(x.flatten(1))
-        print(x.shape)
         return self.out(x)     
 
 
