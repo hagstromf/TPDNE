@@ -428,20 +428,20 @@ class SynthesisNet(nn.Module):
                                                      act_kwargs=act_kwargs)
                                                      for i in range(1, self.num_blocks)])
         
-    def forward(self, w):
-        batch_size = w.shape[0]
-        w = w.unsqueeze(0).expand(self.num_blocks, *w.shape[-2:])
+    def forward(self, ws):
+        batch_size = ws.shape[1]
+        # w = w.unsqueeze(0).expand(self.num_blocks, *w.shape[-2:])
 
         x = self.constant
         x = x.expand(batch_size, *x.shape[-3:])
-        x = self.style_block(x, w[0])
-        rgb = self.tRGB(x, w[0])
+        x = self.style_block(x, ws[0])
+        rgb = self.tRGB(x, ws[0])
 
         for i, block in enumerate(self.blocks):
             x = F.interpolate(x, scale_factor=2, mode='bilinear')
             rgb = F.interpolate(rgb, scale_factor=2, mode='bilinear')
 
-            x, tRGB = block(x, w[i+1])
+            x, tRGB = block(x, ws[i+1])
             rgb += tRGB
 
         return F.tanh(rgb)
@@ -467,9 +467,17 @@ class Generator(nn.Module):
         self.syntNet = SynthesisNet(w_dim, out_res, **synt_kwargs)
         self.mapNet = MappingNet(z_dim, w_dim, **map_kwargs)
 
-    def forward(self, z):
+    def forward(self, z, style_mix_prob=0):
         w = self.mapNet(z)
-        return self.syntNet(w)
+        ws = w.unsqueeze(0).repeat(self.syntNet.num_blocks, 1, 1)
+
+        # Style mixing
+        if style_mix_prob > 0:
+            cutoff = torch.randint(1, ws.shape[0], size=()) if torch.rand([]) < style_mix_prob else None
+            if cutoff is not None: 
+                ws[cutoff:] = self.mapNet(torch.randn_like(z)).unsqueeze(0).repeat(self.syntNet.num_blocks, 1, 1)[cutoff:]
+
+        return self.syntNet(ws)
     
 
 class DiscriminatorBlock(nn.Module):
@@ -556,7 +564,7 @@ class Discriminator(nn.Module):
         super().__init__()
         
         self.num_blocks = int(np.log2(in_res)) - 1
-        # print(self.num_blocks)
+
         # If no custom per discrimator block output channels were given, build default number 
         # of channels (folowing the structure of ProgressiveGan)
         if not n_channels:
@@ -566,7 +574,6 @@ class Discriminator(nn.Module):
                     n = n // 2 if n > 4 else n # Stop n from going below 4 channels
                 n_channels.append(n)
         n_channels.reverse()
-        print(n_channels)
 
         self.fRGB = EqualizedConv2d(in_channels=3, 
                                     out_channels=n_channels[0],
