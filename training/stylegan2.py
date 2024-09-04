@@ -477,7 +477,7 @@ class Generator(nn.Module):
             if cutoff is not None: 
                 ws[cutoff:] = self.mapNet(torch.randn_like(z)).unsqueeze(0).repeat(self.syntNet.num_blocks, 1, 1)[cutoff:]
 
-        return self.syntNet(ws)
+        return self.syntNet(ws), ws
     
 
 class DiscriminatorBlock(nn.Module):
