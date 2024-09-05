@@ -6,3 +6,6 @@ data/
 
 # Ignore notebooks
 *.ipynb
+
+# Ignore temporary files/folders
+*tmp*
