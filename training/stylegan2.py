@@ -293,7 +293,7 @@ class StyleBlock(nn.Module):
 
         if self.noise is not None:
             batch_size = x.shape[0]
-            noise = torch.randn([batch_size, 1, *x.shape[-2:]], dtype=torch.float32, device=DEVICE) * self.noise
+            noise = torch.randn([batch_size, 1, *x.shape[-2:]], dtype=torch.float32, device=x.device) * self.noise
             x = x + noise
 
         return self.activation(x)
@@ -354,10 +354,10 @@ class ResolutionBlock(nn.Module):
                           act_fn=act_fn,
                           act_kwargs=act_kwargs) 
 
-    def forward(self, x, w):
-        x = self.style_block1(x, w)
-        x = self.style_block2(x, w)
-        rgb = self.tRGB(x, w)
+    def forward(self, x, ws):
+        x = self.style_block1(x, ws[0])
+        x = self.style_block2(x, ws[1])
+        rgb = self.tRGB(x, ws[2])
         return x, rgb
 
 
@@ -381,6 +381,7 @@ class SynthesisNet(nn.Module):
         super().__init__()
 
         self.num_blocks = int(np.log2(out_res)) - 1
+        self.num_ws = self.num_blocks * 3 - 1
 
         # If no custom per resolution block output channels were given, build default number 
         # of channels (folowing the structure of ProgressiveGan)
@@ -430,19 +431,21 @@ class SynthesisNet(nn.Module):
         
     def forward(self, ws):
         batch_size = ws.shape[1]
-        # w = w.unsqueeze(0).expand(self.num_blocks, *w.shape[-2:])
 
         x = self.constant
         x = x.expand(batch_size, *x.shape[-3:])
         x = self.style_block(x, ws[0])
-        rgb = self.tRGB(x, ws[0])
+        rgb = self.tRGB(x, ws[1])
 
+        ws_idx = 2
         for i, block in enumerate(self.blocks):
             x = F.interpolate(x, scale_factor=2, mode='bilinear')
             rgb = F.interpolate(rgb, scale_factor=2, mode='bilinear')
 
-            x, tRGB = block(x, ws[i+1])
+            x, tRGB = block(x, ws[ws_idx:ws_idx+3])
             rgb += tRGB
+
+            ws_idx += 3
 
         return F.tanh(rgb)
 
@@ -469,13 +472,13 @@ class Generator(nn.Module):
 
     def forward(self, z, style_mix_prob=0):
         w = self.mapNet(z)
-        ws = w.unsqueeze(0).repeat(self.syntNet.num_blocks, 1, 1)
+        ws = w.unsqueeze(0).repeat(self.syntNet.num_ws, 1, 1)
 
         # Style mixing
         if style_mix_prob > 0:
             cutoff = torch.randint(1, ws.shape[0], size=()) if torch.rand([]) < style_mix_prob else None
             if cutoff is not None: 
-                ws[cutoff:] = self.mapNet(torch.randn_like(z)).unsqueeze(0).repeat(self.syntNet.num_blocks, 1, 1)[cutoff:]
+                ws[cutoff:] = self.mapNet(torch.randn_like(z)).unsqueeze(0).repeat(ws.shape[0], 1, 1)[cutoff:]
 
         return self.syntNet(ws), ws
     
