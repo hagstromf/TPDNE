@@ -14,7 +14,7 @@ class GeneratorLoss(nn.Module):
         self.pl_weight = pl_weight
         self.pl_beta = pl_beta
         self.pl_ema = torch.zeros([])
-        self.t = torch.ones([])
+        self.t = 1
 
     def pl_reg(self, fake_images, ws):
         *_, img_H, img_W = fake_images.shape
@@ -29,6 +29,7 @@ class GeneratorLoss(nn.Module):
 
         self.pl_ema = self.pl_beta * self.pl_ema + (1 - self.pl_beta) * norm.detach().mean()
         pl_ema_hat = self.pl_ema / (1 - self.pl_beta**self.t)
+        self.t += 1
 
         pl_penalty = (norm - pl_ema_hat).square().mean()
      
