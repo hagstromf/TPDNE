@@ -15,7 +15,7 @@ class EqualizedLinear(nn.Module):
                  bias_init=0,
                  lr_multiplier=1,
                  act_fn='LeakyReLU',
-                 act_kwargs={'negative_slope': 0.2}
+                 act_kwargs=None
                 ):
         
         super().__init__()
@@ -52,7 +52,7 @@ class EqualizedConv2d(nn.Module):
                  bias_init=0,
                  lr_multiplier=1,
                  act_fn='LeakyReLU',
-                 act_kwargs={'negative_slope': 0.2}
+                 act_kwargs=None
                 ):
         
         super().__init__()
@@ -160,7 +160,7 @@ class ToRGB(nn.Module):
                  bias_init=0,
                  lr_multiplier=1,
                  act_fn='LeakyReLU',
-                 act_kwargs={'negative_slope': 0.2}
+                 act_kwargs=None
                 ):
         
         super().__init__()
@@ -205,7 +205,7 @@ class MappingNet(nn.Module):
                  num_layers=8,
                  lr_multiplier=0.01,
                  act_fn='LeakyReLU', 
-                 act_kwargs={'negative_slope': 0.2}
+                 act_kwargs=None
                 ):
         
         super().__init__()
@@ -252,7 +252,7 @@ class StyleBlock(nn.Module):
                  lr_multiplier=1,
                  noise=True,
                  act_fn='LeakyReLU',
-                 act_kwargs={'negative_slope': 0.2}
+                 act_kwargs=None
                 ):
         
         super().__init__()
@@ -313,7 +313,7 @@ class ResolutionBlock(nn.Module):
                  lr_multiplier=1,
                  noise=True,
                  act_fn='LeakyReLU',
-                 act_kwargs={'negative_slope': 0.2}
+                 act_kwargs=None
                 ):
 
         super().__init__()
@@ -375,7 +375,7 @@ class SynthesisNet(nn.Module):
                  lr_multiplier=1,
                  noise=True,
                  act_fn='LeakyReLU',
-                 act_kwargs={'negative_slope': 0.2}
+                 act_kwargs=None
                 ):
 
         super().__init__()
@@ -495,7 +495,8 @@ class DiscriminatorBlock(nn.Module):
                  bias_init=0,
                  lr_multiplier=1,
                  act_fn='LeakyReLU',
-                 act_kwargs={'negative_slope': 0.2}):
+                 act_kwargs=None
+                ):
         
         super().__init__()
 
@@ -561,7 +562,7 @@ class Discriminator(nn.Module):
                  bias_init=0,
                  lr_multiplier=1,
                  act_fn='LeakyReLU',
-                 act_kwargs={'negative_slope': 0.2}
+                 act_kwargs=None
                 ):
         
         super().__init__()
