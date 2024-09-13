@@ -590,21 +590,19 @@ class Discriminator(nn.Module):
                                     lr_multiplier=lr_multiplier,
                                     act_fn=act_fn,
                                     act_kwargs=act_kwargs)
-        
-        blocks = nn.ModuleList([DiscriminatorBlock(n_channels[i-1],
-                                                   n_channels[i],
-                                                   kernel_size,
-                                                   stride=stride,
-                                                   padding=padding,
-                                                   dilation=dilation,
-                                                   bias=bias,
-                                                   bias_init=bias_init,
-                                                   lr_multiplier=lr_multiplier,
-                                                   act_fn=act_fn,
-                                                   act_kwargs=act_kwargs)
-                                                   for i in range(1, self.num_blocks)])
-        
-        self.seq = nn.Sequential(*blocks)
+
+        self.seq = nn.Sequential(*[DiscriminatorBlock(n_channels[i-1],
+                                                    n_channels[i],
+                                                    kernel_size,
+                                                    stride=stride,
+                                                    padding=padding,
+                                                    dilation=dilation,
+                                                    bias=bias,
+                                                    bias_init=bias_init,
+                                                    lr_multiplier=lr_multiplier,
+                                                    act_fn=act_fn,
+                                                    act_kwargs=act_kwargs)
+                                                    for i in range(1, self.num_blocks)])
 
         # Post minibatch standard deviation layers
         self.conv = EqualizedConv2d(in_channels=n_channels[-1] + 1, 
