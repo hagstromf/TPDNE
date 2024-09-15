@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 import numpy as np
 
-from utils.constants import DEVICE
+# from utils.constants import DEVICE
 
 
 class EqualizedLinear(nn.Module):
@@ -125,7 +125,7 @@ class EqualizedConv2dModulated(nn.Module):
 
         # Modulate weight
         s = s[:, None, :, None, None]
-        W = s * self.weight.unsqueeze(0) #* self.weight_scale
+        W = s * self.weight.unsqueeze(0)
 
         if self.demodulate:
             # Demodulate weight
@@ -355,9 +355,9 @@ class ResolutionBlock(nn.Module):
                           act_kwargs=act_kwargs) 
 
     def forward(self, x, ws):
-        x = self.style_block1(x, ws[0])
-        x = self.style_block2(x, ws[1])
-        rgb = self.tRGB(x, ws[2])
+        x = self.style_block1(x, ws[:, 0])
+        x = self.style_block2(x, ws[:, 1])
+        rgb = self.tRGB(x, ws[:, 2])
         return x, rgb
 
 
@@ -430,22 +430,21 @@ class SynthesisNet(nn.Module):
                                                      for i in range(1, self.num_blocks)])
         
     def forward(self, ws):
-        batch_size = ws.shape[1]
+        batch_size = ws.shape[0]
 
-        x = self.constant
-        x = x.expand(batch_size, *x.shape[-3:])
-        x = self.style_block(x, ws[0])
-        rgb = self.tRGB(x, ws[1])
+        x = self.constant.repeat(batch_size, 1, 1, 1)
+        x = self.style_block(x, ws[:, 0])
+        rgb = self.tRGB(x, ws[:, 1])
 
-        ws_idx = 2
-        for i, block in enumerate(self.blocks):
+        idx = 2
+        for block in self.blocks:
             x = F.interpolate(x, scale_factor=2, mode='bilinear')
             rgb = F.interpolate(rgb, scale_factor=2, mode='bilinear')
 
-            x, tRGB = block(x, ws[ws_idx:ws_idx+3])
+            x, tRGB = block(x, ws[:, idx:idx+3])
             rgb += tRGB
 
-            ws_idx += 3
+            idx += 3
 
         return F.tanh(rgb)
 
@@ -472,13 +471,13 @@ class Generator(nn.Module):
 
     def forward(self, z, style_mix_prob=0):
         w = self.mapNet(z)
-        ws = w.unsqueeze(0).repeat(self.syntNet.num_ws, 1, 1)
+        ws = w.unsqueeze(1).repeat(1, self.syntNet.num_ws, 1)
 
         # Style mixing
         if style_mix_prob > 0:
-            cutoff = torch.randint(1, ws.shape[0], size=()) if torch.rand([]) < style_mix_prob else None
+            cutoff = torch.randint(1, ws.shape[1], size=()) if torch.rand([]) < style_mix_prob else None
             if cutoff is not None: 
-                ws[cutoff:] = self.mapNet(torch.randn_like(z)).unsqueeze(0).repeat(ws.shape[0], 1, 1)[cutoff:]
+                ws[:, cutoff:] = self.mapNet(torch.randn_like(z)).unsqueeze(1).repeat(1, ws.shape[1], 1)[:, cutoff:]
 
         return self.syntNet(ws), ws
     
