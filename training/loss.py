@@ -4,8 +4,6 @@ import torch.nn.functional as F
 
 import numpy as np
 
-from utils.constants import REAL_LABEL, FAKE_LABEL
-
 
 class GeneratorLoss(nn.Module):
     def __init__(self, pl_weight=2.0, pl_beta=0.99):
@@ -20,8 +18,8 @@ class GeneratorLoss(nn.Module):
         *_, img_H, img_W = fake_images.shape
         y = torch.randn_like(fake_images) / np.sqrt(img_H * img_W)
 
-        grad = torch.autograd.grad(fake_images * y,
-                                   ws,
+        grad = torch.autograd.grad(outputs=fake_images * y,
+                                   inputs=ws,
                                    grad_outputs=torch.ones_like(fake_images),
                                    create_graph=True)[0]
 
@@ -36,11 +34,8 @@ class GeneratorLoss(nn.Module):
         return self.pl_weight * pl_penalty
 
     def forward(self, netD, fake_images, ws, do_reg=False):
-        batch_size = fake_images.shape[0]
-        targets = REAL_LABEL * torch.ones((batch_size, 1)).to(fake_images.device)
-
         output = F.sigmoid(netD(fake_images))
-        loss = F.binary_cross_entropy(output, targets)
+        loss = -torch.log(output).mean()
 
         pl_penalty = 0
         if do_reg:
@@ -67,13 +62,8 @@ class DiscriminatorLoss(nn.Module):
         return penalty
     
     def forward(self, netD, real_images, fake_images, do_reg=False):
-        batch_size = real_images.shape[0]
-    
         real_images_tmp = real_images.detach().requires_grad_(do_reg)
         fake_images_tmp = fake_images.detach()
-
-        targets_real = REAL_LABEL * torch.ones((batch_size, 1)).to(real_images_tmp.device)
-        targets_fake = FAKE_LABEL * torch.ones((batch_size, 1)).to(fake_images_tmp.device)
         
         logits_real = netD(real_images_tmp)
         logits_fake = netD(fake_images_tmp)
@@ -81,17 +71,16 @@ class DiscriminatorLoss(nn.Module):
         output_real = F.sigmoid(logits_real)
         output_fake = F.sigmoid(logits_fake)
 
-        D_real = torch.mean(output_real).to(real_images_tmp.device)
-        D_fake = torch.mean(output_fake).to(fake_images_tmp.device)
+        D_real = torch.mean(output_real)
+        D_fake = torch.mean(output_fake)
 
-        loss_real = F.binary_cross_entropy(output_real, targets_real)
-        loss_fake = F.binary_cross_entropy(output_fake, targets_fake)
-
-        r1_penalty = 0
-        # r1_penalty = torch.zeros([]).to(real_images_tmp.device)
-        if do_reg:
-            r1_penalty = self.r1_reg(real_images_tmp, logits_real)
+        loss_real = -torch.log(output_real).mean()
+        loss_fake = -torch.log(1 - output_fake).mean()
 
         loss = loss_real + loss_fake
+
+        r1_penalty = 0
+        if do_reg:
+            r1_penalty = self.r1_reg(real_images_tmp, logits_real)
         
         return loss, r1_penalty, D_real, D_fake
