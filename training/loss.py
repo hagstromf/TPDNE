@@ -34,8 +34,8 @@ class GeneratorLoss(nn.Module):
         return self.pl_weight * pl_penalty
 
     def forward(self, netD, fake_images, ws, do_reg=False):
-        output = F.sigmoid(netD(fake_images))
-        loss = -torch.log(output).mean()
+        logits = netD(fake_images)
+        loss = F.binary_cross_entropy_with_logits(logits, torch.ones_like(logits))
 
         pl_penalty = 0
         if do_reg:
@@ -68,14 +68,11 @@ class DiscriminatorLoss(nn.Module):
         logits_real = netD(real_images_tmp)
         logits_fake = netD(fake_images_tmp)
 
-        output_real = F.sigmoid(logits_real)
-        output_fake = F.sigmoid(logits_fake)
+        D_real = F.sigmoid(logits_real).mean()
+        D_fake = F.sigmoid(logits_fake).mean()
 
-        D_real = torch.mean(output_real)
-        D_fake = torch.mean(output_fake)
-
-        loss_real = -torch.log(output_real).mean()
-        loss_fake = -torch.log(1 - output_fake).mean()
+        loss_real = F.binary_cross_entropy_with_logits(logits_real, torch.ones_like(logits_real))
+        loss_fake = F.binary_cross_entropy_with_logits(logits_fake, torch.zeros_like(logits_fake))
 
         loss = loss_real + loss_fake
 
