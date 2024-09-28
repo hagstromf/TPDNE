@@ -125,7 +125,7 @@ class EqualizedConv2dModulated(nn.Module):
 
         # Modulate weight
         s = s[:, None, :, None, None]
-        W = s * self.weight.unsqueeze(0)
+        W = s * W.unsqueeze(0)
 
         if self.demodulate:
             # Demodulate weight
