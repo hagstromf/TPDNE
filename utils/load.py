@@ -17,7 +17,7 @@ def load_images(path, res, batch_size=32, test_size=0.1):
     test_set = torch.utils.data.Subset(dataset, range(n_test)) 
     train_set = torch.utils.data.Subset(dataset, range(n_test, n)) 
 
-    trainloader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
-    testloader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=True)
+    trainloader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True, pin_memory=True)
+    testloader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=True, pin_memory=True)
 
     return trainloader, testloader
