@@ -9,3 +9,6 @@ data/
 
 # Ignore temporary files/folders
 *tmp*
+
+# Ignore tensorboard output folder
+runs/
