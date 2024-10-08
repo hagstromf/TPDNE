@@ -1,11 +1,12 @@
 import torch
 import os
+import gc
 
 from training.loss import DiscriminatorLoss, GeneratorLoss
 from training.stylegan2 import Discriminator, Generator
 
-from utils.constants import DEVICE, ROOT_DIR
-from utils.load import load_images
+from training.constants import ROOT_DIR
+from training.utils import load_images, unnormalize_images
 
 from torchsummary import summary
 import torchinfo
@@ -15,11 +16,12 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision.transforms import functional as F
 import matplotlib.pyplot as plt
 
+from torcheval.metrics import FrechetInceptionDistance
+
 
 # TODO: Implement training loop. Utilize at least DataParallel to split 
 # batch computaion to multiple GPUs. Consider using DistributedDataParallel
-# for even better multi-GPU performance. Implement logging using tensorboard
-# and some rudimentary logger for console output.
+# for even better multi-GPU performance. 
 
 
 def main():
@@ -44,6 +46,12 @@ def main():
 
     # Initialize tensorboard writer
     tb_writer = SummaryWriter()
+
+    # Set device
+    if torch.cuda.is_available():
+        DEVICE = torch.device('cuda:0')
+    else:
+        DEVICE = torch.device('cpu')
 
     # Initialize discrimator and generator networks
     D_net = Discriminator(res).to(DEVICE)
@@ -71,8 +79,18 @@ def main():
     G_loss = GeneratorLoss().to(DEVICE)
 
     # Load data
-    dataloader, _ = load_images(os.path.join(ROOT_DIR, 'data/PokemonData'), res=res, batch_size=batch_size)
+    dataset, _ = load_images(os.path.join(ROOT_DIR, 'data/PokemonData'), res=res, test_size=0.99)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
 
+    # Initialize Frechet Inception Distance object
+    FID = FrechetInceptionDistance(device=DEVICE)
+    for imgs, _ in iter(torch.utils.data.DataLoader(dataset, batch_size=100)):
+        imgs = unnormalize_images(imgs.to(DEVICE))
+        FID.update(imgs, is_real=True)
+
+    # print(torch.cuda.memory_summary())
+
+    print('Starting training!')
     for ep in range(epochs):
         running_d_loss = 0
         running_r1_penalty = 0
@@ -144,8 +162,27 @@ def main():
                 G_opt.step()
                 del pl_penalty
                 # print("Success!!!")
+            
+            gc.collect()
+            torch.cuda.empty_cache()
+
+        # print(torch.cuda.memory_summary())
 
         with torch.no_grad():
+            z = torch.randn((50, z_dim), device=DEVICE)
+            fake_imgs, _ = G_net(z)
+            del z
+
+            fake_imgs = unnormalize_images(fake_imgs)
+            FID.update(fake_imgs, is_real=False)
+            fid_score = FID.compute()
+
+            # if (ep+1) % 10 == 0:
+            #     for i in range(3):
+            #         plt.imshow(F.to_pil_image(fake_imgs[i]))
+            #         plt.show()
+            del fake_imgs 
+
             d_loss_mean = running_d_loss / len(dataloader.sampler)
             g_loss_mean = running_g_loss / len(dataloader.sampler)
             r1_penalty_mean = running_r1_penalty / (len(dataloader.sampler) / r1_interval)
@@ -155,6 +192,7 @@ def main():
 
             print(50*'-' + '\n')
             print(f'Epoch {ep} completed with:')
+            print(f'FID score {fid_score}')
             print(f'Discrimator loss {d_loss_mean}')
             print(f'Generator loss {g_loss_mean}')
             print(f'R1 penalty {r1_penalty_mean}')
@@ -163,6 +201,7 @@ def main():
             print(f'D_fake {D_fake_mean}')
             print()
 
+            tb_writer.add_scalar('FID_score', fid_score, ep)
             tb_writer.add_scalar('D_loss', d_loss_mean, ep)
             tb_writer.add_scalar('G_loss', g_loss_mean, ep)
             tb_writer.add_scalar('R1_penalty', r1_penalty_mean, ep)
@@ -170,12 +209,10 @@ def main():
             tb_writer.add_scalar('D_real', D_real_mean, ep)
             tb_writer.add_scalar('D_fake', D_fake_mean, ep)
 
-            if (ep+1) % 10 == 0:
-                z = torch.randn((3, z_dim), device=DEVICE)
-                fake_imgs, _ = G_net(z)
-                for i in range(3):
-                    plt.imshow(F.to_pil_image(fake_imgs[i]))
-                    plt.show()
+            gc.collect()
+            torch.cuda.empty_cache()
+            # print(torch.cuda.memory_summary())
+
 
 
 
