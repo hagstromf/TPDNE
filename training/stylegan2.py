@@ -4,8 +4,6 @@ import torch.nn.functional as F
 
 import numpy as np
 
-# from utils.constants import DEVICE
-
 
 class EqualizedLinear(nn.Module):
     def __init__(self,
