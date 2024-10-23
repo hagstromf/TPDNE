@@ -12,3 +12,6 @@ data/
 
 # Ignore tensorboard output folder
 runs/
+
+# Ignore model folder
+models/
