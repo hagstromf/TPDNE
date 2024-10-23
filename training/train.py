@@ -1,6 +1,8 @@
 import torch
 import os
 import gc
+from datetime import datetime
+import numpy as np
 
 from training.loss import DiscriminatorLoss, GeneratorLoss
 from training.stylegan2 import Discriminator, Generator
@@ -38,6 +40,10 @@ def main():
     # epsilon = 1e-08
     c_r1 = r1_interval / (r1_interval + 1) # R1 lazy regularization correction term for optimizer hyperparams
     c_pl = pl_interval / (pl_interval + 1) # Path length lazy regularization correction term for optimizer hyperparams
+
+    # Create folder where model of current training run will be stored
+    exp_folder = 'run_' + datetime.today().strftime('%Y-%m-%d')
+    os.makedirs(os.path.join(ROOT_DIR, 'models', exp_folder), exist_ok=True)
 
     # Enable cuDNN auto-tuner to automatically select kernel
     # for best performance when computing convolutions. 
@@ -79,7 +85,7 @@ def main():
     G_loss = GeneratorLoss().to(DEVICE)
 
     # Load data
-    dataset, _ = load_images(os.path.join(ROOT_DIR, 'data/PokemonData'), res=res, test_size=0.99)
+    dataset, _ = load_images(os.path.join(ROOT_DIR, 'data', 'PokemonData'), res=res, test_size=0.99)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
 
     # Initialize Frechet Inception Distance object
@@ -87,6 +93,7 @@ def main():
     for imgs, _ in iter(torch.utils.data.DataLoader(dataset, batch_size=100)):
         imgs = unnormalize_images(imgs.to(DEVICE))
         FID.update(imgs, is_real=True)
+    best_fid_score = np.inf
 
     # print(torch.cuda.memory_summary())
 
@@ -181,8 +188,13 @@ def main():
             #     for i in range(3):
             #         plt.imshow(F.to_pil_image(fake_imgs[i]))
             #         plt.show()
-            del fake_imgs 
+            del fake_imgs  
 
+            if fid_score < best_fid_score:
+                best_fid_score = fid_score
+                torch.save(G_net.state_dict(), os.path.join(ROOT_DIR, 'models', exp_folder, 'generator.pth'))
+                torch.save(D_net.state_dict(), os.path.join(ROOT_DIR, 'models', exp_folder, 'discrimator.pth'))
+                
             d_loss_mean = running_d_loss / len(dataloader.sampler)
             g_loss_mean = running_g_loss / len(dataloader.sampler)
             r1_penalty_mean = running_r1_penalty / (len(dataloader.sampler) / r1_interval)
