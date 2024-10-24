@@ -6,7 +6,7 @@ import numpy as np
 
 
 class GeneratorLoss(nn.Module):
-    def __init__(self, pl_weight=2.0, pl_beta=0.99):
+    def __init__(self, pl_weight: float=2.0, pl_beta: float=0.99) -> None:
         super().__init__()
 
         self.pl_weight = pl_weight
@@ -14,7 +14,7 @@ class GeneratorLoss(nn.Module):
         self.pl_ema = torch.zeros([])
         self.t = 1
 
-    def pl_reg(self, fake_images, ws):
+    def pl_reg(self, fake_images: torch.Tensor, ws: torch.Tensor) -> torch.Tensor:
         *_, img_H, img_W = fake_images.shape
         y = torch.randn_like(fake_images) / np.sqrt(img_H * img_W)
 
@@ -33,11 +33,17 @@ class GeneratorLoss(nn.Module):
      
         return self.pl_weight * pl_penalty
 
-    def forward(self, netD, fake_images, ws, do_reg=False):
+    def forward(self, 
+                netD: nn.Module, 
+                fake_images: torch.Tensor, 
+                ws: torch.Tensor, 
+                do_reg: bool=False
+                ) -> tuple[torch.Tensor, torch.Tensor]:
+        
         logits = netD(fake_images)
         loss = F.binary_cross_entropy_with_logits(logits, torch.ones_like(logits))
 
-        pl_penalty = 0
+        pl_penalty = torch.tensor([0.])
         if do_reg:
             pl_penalty = self.pl_reg(fake_images, ws)
 
@@ -45,12 +51,12 @@ class GeneratorLoss(nn.Module):
     
 
 class DiscriminatorLoss(nn.Module):
-    def __init__(self, r1_gamma=10):
+    def __init__(self, r1_gamma: float=10.) -> None:
         super().__init__()
 
         self.r1_gamma = r1_gamma
 
-    def r1_reg(self, real_images, logits_real):
+    def r1_reg(self, real_images: torch.Tensor, logits_real: torch.Tensor) -> torch.Tensor:
         grad = torch.autograd.grad(logits_real,
                                    real_images,
                                    grad_outputs=torch.ones_like(logits_real),
@@ -61,7 +67,13 @@ class DiscriminatorLoss(nn.Module):
 
         return penalty
     
-    def forward(self, netD, real_images, fake_images, do_reg=False):
+    def forward(self, 
+                netD: nn.Module, 
+                real_images: torch.Tensor, 
+                fake_images: torch.Tensor, 
+                do_reg: bool=False
+                ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        
         real_images_tmp = real_images.detach().requires_grad_(do_reg)
         fake_images_tmp = fake_images.detach()
         
@@ -76,7 +88,7 @@ class DiscriminatorLoss(nn.Module):
 
         loss = loss_real + loss_fake
 
-        r1_penalty = 0
+        r1_penalty = torch.tensor([0.])
         if do_reg:
             r1_penalty = self.r1_reg(real_images_tmp, logits_real)
         
