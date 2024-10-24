@@ -4,17 +4,18 @@ import torch.nn.functional as F
 
 import numpy as np
 
+from typing import Dict, Any, Optional, List
 
 class EqualizedLinear(nn.Module):
     def __init__(self,
-                 in_dim,
-                 out_dim,
-                 bias=True, 
-                 bias_init=0,
-                 lr_multiplier=1,
-                 act_fn='LeakyReLU',
-                 act_kwargs=None
-                ):
+                 in_dim: int,
+                 out_dim: int,
+                 bias: bool = True, 
+                 bias_init: float = 0.,
+                 lr_multiplier: float = 1.,
+                 act_fn: str = 'LeakyReLU',
+                 act_kwargs: Optional[Dict[Any, Any]] = None
+                ) -> None:
         
         super().__init__()
         
@@ -28,30 +29,30 @@ class EqualizedLinear(nn.Module):
         self.bias = nn.Parameter(torch.full([out_dim], bias_init, dtype=torch.float32)) if bias else None
         self.bias_scale = lr_multiplier
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         W = self.weight * self.weight_scale
-        b = self.bias
-        if self.bias is not None:
-            b = b * self.bias_scale
+        bias = self.bias
+        if bias is not None:
+            bias = bias * self.bias_scale
 
-        return self.activation(F.linear(x, weight=W, bias=b))
+        return self.activation(F.linear(x, weight=W, bias=bias))
     
 
 class EqualizedConv2d(nn.Module):
     def __init__(self,
-                 in_channels,
-                 out_channels,
-                 kernel_size,
-                 stride=1,
-                 padding='same',
-                 dilation=1,
-                 groups=1,
-                 bias=True, 
-                 bias_init=0,
-                 lr_multiplier=1,
-                 act_fn='LeakyReLU',
-                 act_kwargs=None
-                ):
+                 in_channels: int,
+                 out_channels: int,
+                 kernel_size: int | tuple[int, int],
+                 stride: int | tuple[int, int] = 1,
+                 padding: str | int | tuple[int, int] = 'same',
+                 dilation: int | tuple[int, int] = 1,
+                 groups: int = 1,
+                 bias: bool = True, 
+                 bias_init: float = 0.,
+                 lr_multiplier: float = 1.,
+                 act_fn: str = 'LeakyReLU',
+                 act_kwargs: Optional[Dict[Any, Any]] = None
+                ) -> None:
         
         super().__init__()
         
@@ -59,10 +60,9 @@ class EqualizedConv2d(nn.Module):
             act_kwargs = {}
         self.activation = getattr(nn, act_fn)(**act_kwargs)
 
-        if type(kernel_size) is tuple:
-            kH, kW = kernel_size
-        else:
-            kH, kW = kernel_size, kernel_size
+        kH, kW = kernel_size if type(kernel_size) is tuple else (kernel_size, kernel_size)
+        assert type(kH) == int, "Kernel height kH needs to be an integer!"
+        assert type(kW) == int, "Kernel width kW needs to be an integer!"
 
         self.stride = stride
         self.padding = padding
@@ -75,15 +75,15 @@ class EqualizedConv2d(nn.Module):
         self.bias = nn.Parameter(torch.full([out_channels], bias_init, dtype=torch.float32)) if bias else None
         self.bias_scale = lr_multiplier
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         W = self.weight * self.weight_scale
-        b = self.bias
-        if self.bias is not None:
-            b = self.bias * self.bias_scale
+        bias = self.bias
+        if bias is not None:
+            bias = bias * self.bias_scale
 
         return self.activation(F.conv2d(x, 
                                         weight=W, 
-                                        bias=b, 
+                                        bias=bias, 
                                         stride=self.stride, 
                                         padding=self.padding,
                                         dilation=self.dilation,
@@ -92,22 +92,21 @@ class EqualizedConv2d(nn.Module):
 
 class EqualizedConv2dModulated(nn.Module):
     def __init__(self,
-                 in_channels,
-                 out_channels,
-                 kernel_size,
-                 stride=1,
-                 padding='same',
-                 dilation=1,
-                 lr_multiplier=1,
-                 demodulate=True
-                ):
+                 in_channels: int,
+                 out_channels: int,
+                 kernel_size: int | tuple[int, int],
+                 stride: int | tuple[int, int] = 1,
+                 padding: str | int | tuple[int, int] = 'same',
+                 dilation: int | tuple[int, int] = 1,
+                 lr_multiplier: float = 1.,
+                 demodulate: bool = True
+                ) -> None:
         
         super().__init__()
 
-        if type(kernel_size) is tuple:
-            kH, kW = kernel_size
-        else:
-            kH, kW = kernel_size, kernel_size
+        kH, kW = kernel_size if type(kernel_size) is tuple else (kernel_size, kernel_size)
+        assert type(kH) == int, "Kernel height kH needs to be an integer!"
+        assert type(kW) == int, "Kernel width kW needs to be an integer!"
 
         self.stride = stride
         self.padding = padding
@@ -117,7 +116,7 @@ class EqualizedConv2dModulated(nn.Module):
         self.weight = nn.Parameter(torch.randn([out_channels, in_channels, kH, kW], dtype=torch.float32) / lr_multiplier)
         self.weight_scale = lr_multiplier / np.sqrt(in_channels * kH * kW)
 
-    def forward(self, x, s):
+    def forward(self, x: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
         # Scale weight
         W = self.weight * self.weight_scale
 
@@ -152,14 +151,14 @@ class EqualizedConv2dModulated(nn.Module):
 
 class ToRGB(nn.Module):
     def __init__(self,
-                 in_channels,
-                 w_dim,
-                 bias=True, 
-                 bias_init=0,
-                 lr_multiplier=1,
-                 act_fn='LeakyReLU',
-                 act_kwargs=None
-                ):
+                 in_channels: int,
+                 w_dim: int,
+                 bias: bool = True, 
+                 bias_init: float = 0.,
+                 lr_multiplier: float = 1,
+                 act_fn: str = 'LeakyReLU',
+                 act_kwargs: Optional[Dict[Any, Any]] = None
+                ) -> None:
         
         super().__init__()
 
@@ -185,25 +184,25 @@ class ToRGB(nn.Module):
         self.bias = nn.Parameter(torch.full([3], bias_init, dtype=torch.float32)) if bias else None
         self.bias_scale = lr_multiplier
     
-    def forward(self, x, w):
+    def forward(self, x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
         s = self.style(w)
         x = self.conv(x, s)
 
         if self.bias is not None:
-            b = self.bias * self.bias_scale
-            x = x + b[None, :, None, None]
+            bias = self.bias * self.bias_scale
+            x = x + bias[None, :, None, None]
 
         return self.activation(x)
     
 
 class MappingNet(nn.Module):
     def __init__(self, 
-                 z_dim, 
-                 w_dim, 
-                 num_layers=8,
-                 lr_multiplier=0.01,
-                 act_fn='LeakyReLU', 
-                 act_kwargs=None
+                 z_dim: int, 
+                 w_dim: int, 
+                 num_layers: int = 8,
+                 lr_multiplier: float = 0.01,
+                 act_fn: str = 'LeakyReLU', 
+                 act_kwargs: Optional[Dict[Any, Any]] = None
                 ):
         
         super().__init__()
@@ -227,7 +226,7 @@ class MappingNet(nn.Module):
         
         self.seq = nn.Sequential(*layers)
 
-    def forward(self, z):
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
         w = z / torch.sqrt(torch.mean(z**2, dim=1, keepdim=True) + 1e-8) # normalize input latent vectors (sampled from unit Gaussian)
         w = self.seq(w)
 
@@ -238,20 +237,20 @@ class MappingNet(nn.Module):
 
 class StyleBlock(nn.Module):
     def __init__(self,
-                 in_channels,
-                 out_channels,
-                 w_dim,
-                 kernel_size,
-                 stride=1,
-                 padding='same',
-                 dilation=1,
-                 bias=True, 
-                 bias_init=0,
-                 lr_multiplier=1,
-                 noise=True,
-                 act_fn='LeakyReLU',
-                 act_kwargs=None
-                ):
+                 in_channels: int,
+                 out_channels: int,
+                 w_dim: int,
+                 kernel_size: int | tuple[int, int],
+                 stride: int | tuple[int, int] = 1,
+                 padding: str | int | tuple[int, int] = 'same',
+                 dilation: int | tuple[int, int] = 1,
+                 bias: bool = True, 
+                 bias_init: float = 0.,
+                 lr_multiplier: float = 1.,
+                 noise: bool = True,
+                 act_fn: str = 'LeakyReLU',
+                 act_kwargs: Optional[Dict[Any, Any]]=None
+                ) -> None:
         
         super().__init__()
 
@@ -281,7 +280,7 @@ class StyleBlock(nn.Module):
 
         self.noise = nn.Parameter(torch.zeros([], dtype=torch.float32)) if noise else None
         
-    def forward(self, x, w):
+    def forward(self, x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
         s = self.style(w)
         x = self.conv(x, s)
 
@@ -299,20 +298,20 @@ class StyleBlock(nn.Module):
 
 class ResolutionBlock(nn.Module):
     def __init__(self,
-                 in_channels,
-                 out_channels,
-                 w_dim,
-                 kernel_size,
-                 stride=1,
-                 padding='same',
-                 dilation=1,
-                 bias=True, 
-                 bias_init=0,
-                 lr_multiplier=1,
-                 noise=True,
-                 act_fn='LeakyReLU',
-                 act_kwargs=None
-                ):
+                 in_channels: int,
+                 out_channels: int,
+                 w_dim: int,
+                 kernel_size: int | tuple[int, int],
+                 stride: int | tuple[int, int] = 1,
+                 padding: str | int | tuple[int, int] = 'same',
+                 dilation: int | tuple[int, int] = 1,
+                 bias: bool = True, 
+                 bias_init: float = 0.,
+                 lr_multiplier: float = 1.,
+                 noise: bool = True,
+                 act_fn: str = 'LeakyReLU',
+                 act_kwargs: Optional[Dict[Any, Any]]=None
+                ) -> None:
 
         super().__init__()
 
@@ -352,7 +351,7 @@ class ResolutionBlock(nn.Module):
                           act_fn=act_fn,
                           act_kwargs=act_kwargs) 
 
-    def forward(self, x, ws):
+    def forward(self, x: torch.Tensor, ws: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]: 
         x = self.style_block1(x, ws[:, 0])
         x = self.style_block2(x, ws[:, 1])
         rgb = self.tRGB(x, ws[:, 2])
@@ -361,20 +360,20 @@ class ResolutionBlock(nn.Module):
 
 class SynthesisNet(nn.Module):
     def __init__(self,
-                 w_dim,
-                 out_res=256,
-                 n_channels=[],
-                 kernel_size=3,
-                 stride=1,
-                 padding='same',
-                 dilation=1,
-                 bias=True, 
-                 bias_init=0,
-                 lr_multiplier=1,
-                 noise=True,
-                 act_fn='LeakyReLU',
-                 act_kwargs=None
-                ):
+                 w_dim: int,
+                 out_res: int = 256,
+                 n_channels: Optional[List[int]] = None,
+                 kernel_size: int | tuple[int, int] = 3,
+                 stride: int | tuple[int, int] = 1,
+                 padding: str | int | tuple[int, int] = 'same',
+                 dilation: int | tuple[int, int] = 1,
+                 bias: bool = True, 
+                 bias_init: float = 0.,
+                 lr_multiplier: float = 1.,
+                 noise: bool = True,
+                 act_fn: str = 'LeakyReLU',
+                 act_kwargs: Optional[Dict[Any, Any]]=None
+                ) -> None:
 
         super().__init__()
 
@@ -383,7 +382,8 @@ class SynthesisNet(nn.Module):
 
         # If no custom per resolution block output channels were given, build default number 
         # of channels (folowing the structure of ProgressiveGan)
-        if not n_channels:
+        if n_channels is None:
+            n_channels = []
             n = 512
             for i in range(self.num_blocks):
                 if i > 3:
@@ -427,7 +427,7 @@ class SynthesisNet(nn.Module):
                                                      act_kwargs=act_kwargs)
                                                      for i in range(1, self.num_blocks)])
         
-    def forward(self, ws):
+    def forward(self, ws: torch.Tensor) -> torch.Tensor:
         batch_size = ws.shape[0]
 
         x = self.constant.repeat(batch_size, 1, 1, 1)
@@ -449,12 +449,12 @@ class SynthesisNet(nn.Module):
 
 class Generator(nn.Module):
     def __init__(self,
-                 z_dim,
-                 w_dim,
-                 out_res=256,
-                 synt_kwargs=None,
-                 map_kwargs=None
-                ):
+                 z_dim: int,
+                 w_dim: int,
+                 out_res: int = 256,
+                 synt_kwargs: Optional[Dict[Any, Any]]=None,
+                 map_kwargs: Optional[Dict[Any, Any]]=None
+                ) -> None:
 
         super().__init__()
 
@@ -467,12 +467,12 @@ class Generator(nn.Module):
         self.syntNet = SynthesisNet(w_dim, out_res, **synt_kwargs)
         self.mapNet = MappingNet(z_dim, w_dim, **map_kwargs)
 
-    def forward(self, z, style_mix_prob=0):
+    def forward(self, z: torch.Tensor, style_mix_prob: float = 0.) -> tuple[torch.Tensor, torch.Tensor]:
         w = self.mapNet(z)
         ws = w.unsqueeze(1).repeat(1, self.syntNet.num_ws, 1)
 
         # Style mixing
-        if style_mix_prob > 0:
+        if style_mix_prob > 0.:
             cutoff = torch.randint(1, ws.shape[1], size=()) if torch.rand([]) < style_mix_prob else None
             if cutoff is not None: 
                 ws[:, cutoff:] = self.mapNet(torch.randn_like(z)).unsqueeze(1).repeat(1, ws.shape[1], 1)[:, cutoff:]
@@ -482,18 +482,18 @@ class Generator(nn.Module):
 
 class DiscriminatorBlock(nn.Module):
     def __init__(self,
-                 in_channels,
-                 out_channels,
-                 kernel_size,
-                 stride=1,
-                 padding='same',
-                 dilation=1,
-                 bias=True, 
-                 bias_init=0,
-                 lr_multiplier=1,
-                 act_fn='LeakyReLU',
-                 act_kwargs=None
-                ):
+                 in_channels: int,
+                 out_channels: int,
+                 kernel_size: int | tuple[int, int],
+                 stride: int | tuple[int, int] = 1,
+                 padding: str | int | tuple[int, int] = 'same',
+                 dilation: int | tuple[int, int] = 1,
+                 bias: bool = True, 
+                 bias_init: float = 0.,
+                 lr_multiplier: float = 1.,
+                 act_fn: str = 'LeakyReLU',
+                 act_kwargs: Optional[Dict[Any, Any]]=None
+                ) -> None:
         
         super().__init__()
 
@@ -535,7 +535,7 @@ class DiscriminatorBlock(nn.Module):
 
         self.scale = 1 / np.sqrt(2) # Scale back the doubling of signal variance caused by residual connection
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         res = F.interpolate(x, scale_factor=0.5, mode='bilinear')
         res = self.residual_conv(res)
 
@@ -549,18 +549,18 @@ class DiscriminatorBlock(nn.Module):
 
 class Discriminator(nn.Module):
     def __init__(self,
-                 in_res,
-                 n_channels=[],
-                 kernel_size=3,
-                 stride=1,
-                 padding='same',
-                 dilation=1,
-                 bias=True, 
-                 bias_init=0,
-                 lr_multiplier=1,
-                 act_fn='LeakyReLU',
-                 act_kwargs=None
-                ):
+                 in_res: int,
+                 n_channels: Optional[List[int]] = None,
+                 kernel_size: int | tuple[int, int] = 3,
+                 stride: int | tuple[int, int] = 1,
+                 padding: str | int | tuple[int, int] = 'same',
+                 dilation: int | tuple[int, int] = 1,
+                 bias: bool = True, 
+                 bias_init: float = 0.,
+                 lr_multiplier: float = 1.,
+                 act_fn: str = 'LeakyReLU',
+                 act_kwargs: Optional[Dict[Any, Any]]=None
+                ) -> None:
         
         super().__init__()
         
@@ -568,7 +568,8 @@ class Discriminator(nn.Module):
 
         # If no custom per discrimator block output channels were given, build default number 
         # of channels (folowing the structure of ProgressiveGan)
-        if not n_channels:
+        if n_channels is None:
+            n_channels = []
             n = 512
             for i in range(self.num_blocks):
                 if i > 3:
@@ -630,7 +631,7 @@ class Discriminator(nn.Module):
                                   act_fn=act_fn,
                                   act_kwargs=act_kwargs)
         
-    def minibatch_std(self, x):
+    def minibatch_std(self, x: torch.Tensor) -> torch.Tensor:
         y = torch.std(x, dim=0)
         y = torch.mean(y)
         y = y.repeat(x.shape[0], 1, *x.shape[-2:])
@@ -638,7 +639,7 @@ class Discriminator(nn.Module):
         x = torch.cat([x, y], dim=1)
         return x
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.fRGB(x)
         x = self.seq(x)
         x = self.minibatch_std(x) 
