@@ -10,7 +10,7 @@ from training.loss import DiscriminatorLoss, GeneratorLoss
 from training.stylegan2 import Discriminator, Generator
 
 from training.constants import ROOT_DIR
-from training.utils import load_images, unnormalize_images, print_training_config
+from training.utils import load_images, unnormalize_images, print_training_config, print_training_statistics, record_training_statistics
 
 from torchsummary import summary
 import torchinfo
@@ -309,31 +309,17 @@ def main():
                 torch.save(G_net.state_dict(), os.path.join(ROOT_DIR, 'models', exp_folder, 'generator.pth'))
                 torch.save(D_net.state_dict(), os.path.join(ROOT_DIR, 'models', exp_folder, 'discrimator.pth'))
 
-            d_loss_mean = running_d_loss / len(dataloader.sampler)
-            g_loss_mean = running_g_loss / len(dataloader.sampler)
-            r1_penalty_mean = running_r1_penalty / (len(dataloader.sampler) / r1_interval)
-            pl_penalty_mean = running_pl_penalty / (len(dataloader.sampler) / pl_interval)
-            D_real_mean = running_D_real / len(dataloader.sampler)
-            D_fake_mean = running_D_fake / len(dataloader.sampler)
+            stats = {}
+            stats['FID score'] = fid_score
+            stats['Discrimator loss'] = running_d_loss / len(dataloader.sampler)
+            stats['Generator loss'] = running_g_loss / len(dataloader.sampler)
+            stats['R1 penalty'] = running_r1_penalty / (len(dataloader.sampler) / r1_interval)
+            stats['PL penalty'] = running_pl_penalty / (len(dataloader.sampler) / pl_interval)
+            stats['D real'] = running_D_real / len(dataloader.sampler)
+            stats['D fake'] = running_D_fake / len(dataloader.sampler)
 
-            print(50*'-' + '\n')
-            print(f'Epoch {ep} completed with:')
-            print(f'FID score {fid_score}')
-            print(f'Discrimator loss {d_loss_mean}')
-            print(f'Generator loss {g_loss_mean}')
-            print(f'R1 penalty {r1_penalty_mean}')
-            print(f'PL penalty {pl_penalty_mean}')
-            print(f'D_real {D_real_mean}')
-            print(f'D_fake {D_fake_mean}')
-            print(50*'-' + '\n')
-
-            tb_writer.add_scalar('FID_score', fid_score, ep)
-            tb_writer.add_scalar('D_loss', d_loss_mean, ep)
-            tb_writer.add_scalar('G_loss', g_loss_mean, ep)
-            tb_writer.add_scalar('R1_penalty', r1_penalty_mean, ep)
-            tb_writer.add_scalar('PL_penalty', pl_penalty_mean, ep)
-            tb_writer.add_scalar('D_real', D_real_mean, ep)
-            tb_writer.add_scalar('D_fake', D_fake_mean, ep)
+            print_training_statistics(stats, ep)
+            record_training_statistics(stats, tb_writer, ep)
 
             gc.collect()
             torch.cuda.empty_cache()

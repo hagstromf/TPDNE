@@ -43,3 +43,16 @@ def print_training_config(args: argparse.Namespace) -> None:
     for k, v in vars(args).items():
         print(f'{k} = {v}')
     print()
+
+def print_training_statistics(stats: Dict[str, float], epoch: int) -> None:
+    print()
+    print(50*'-' + '\n')
+    print(f'Epoch {epoch} completed with:')
+    for k, v in stats.items():
+        print(f'{k} = {v}')
+    print()
+    print(50*'-' + '\n')
+
+def record_training_statistics(stats: Dict[str, float], tb_writer: SummaryWriter, epoch: int) -> None:
+    for k, v in stats.items():
+        tb_writer.add_scalar(k, v, epoch)
