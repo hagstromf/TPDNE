@@ -1,6 +1,7 @@
 import torch
 import os
 import gc
+import argparse
 from datetime import datetime
 import numpy as np
 from tqdm import tqdm
@@ -9,7 +10,7 @@ from training.loss import DiscriminatorLoss, GeneratorLoss
 from training.stylegan2 import Discriminator, Generator
 
 from training.constants import ROOT_DIR
-from training.utils import load_images, unnormalize_images
+from training.utils import load_images, unnormalize_images, parser, print_training_config, print_training_statistics, record_training_statistics
 
 from torchsummary import summary
 import torchinfo
@@ -26,19 +27,114 @@ from torcheval.metrics import FrechetInceptionDistance
 # batch computaion to multiple GPUs. Consider using DistributedDataParallel
 # for even better multi-GPU performance. 
 
+def parser() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        '--epochs',
+        '-ep',
+        type=int,
+        default=100,
+        dest='epochs',
+        help='Number of epochs to train for.',
+    )
+
+    parser.add_argument(
+        '--z_dim',
+        type=int,
+        dest='z_dim',
+        default=512,
+        help='Dimension of latent vector z.'
+    )
+
+    parser.add_argument(
+        '--w_dim',
+        type=int,
+        dest='w_dim',
+        default=512,
+        help='Dimension of intermediate latent vector w.'
+    )
+
+    parser.add_argument(
+        '--resolution',
+        '-res',
+        type=int,
+        dest='resolution',
+        default=256,
+        help='The resolution of the generated images.'
+    )
+
+    parser.add_argument(
+        '--batch_size',
+        '-bs',
+        type=int,
+        dest='batch_size',
+        default=32,
+        help='The size of a mini-batch.'
+    )
+
+    parser.add_argument(
+        '--r1_interval',
+        '-r1',
+        type=int,
+        dest='r1_interval',
+        default=8,
+        help='The interval at which (lazy) R1 regularization is performed.'
+    )
+
+    parser.add_argument(
+        '--pl_interval',
+        '-pl',
+        type=int,
+        dest='pl_interval',
+        default=16,
+        help='The interval at which (lazy) path length regularization is performed.'
+    )
+
+    parser.add_argument(
+        '--learning_rate',
+        '-lr',
+        type=float,
+        dest='learning_rate',
+        default=0.001,
+        help='The learning rate of the optimizers.'
+    )
+
+    parser.add_argument(
+        '--beta1',
+        '-b1',
+        type=float,
+        dest='beta1',
+        default=0.,
+        help='The first moment parameter beta1 of Adam optimizer.'
+    )
+
+    parser.add_argument(
+        '--beta2',
+        '-b2',
+        type=float,
+        dest='beta2',
+        default=0.99,
+        help='The second moment parameter beta1 of Adam optimizer.'
+    )
+
+    return parser.parse_args()
+
 
 def main():
-    epochs = 100
-    z_dim = 512
-    w_dim = 512
-    res = 256
-    batch_size = 8
-    r1_interval = 8
-    pl_interval = 16
-    lr = 0.001
-    beta1 = 0.
-    beta2 = 0.99
-    # epsilon = 1e-08
+    print()
+    args = parser()
+
+    epochs = args.epochs
+    z_dim = args.z_dim
+    w_dim = args.w_dim
+    res = args.resolution
+    batch_size = args.batch_size
+    r1_interval = args.r1_interval
+    pl_interval = args.pl_interval
+    lr = args.learning_rate
+    beta1 = args.beta1
+    beta2 = args.beta2
     c_r1 = r1_interval / (r1_interval + 1) # R1 lazy regularization correction term for optimizer hyperparams
     c_pl = pl_interval / (pl_interval + 1) # Path length lazy regularization correction term for optimizer hyperparams
 
@@ -98,14 +194,14 @@ def main():
     if os.path.exists(fid_path):
         print('Loading FID...', end=' ')
         FID.load_state_dict(torch.load(fid_path, weights_only=True))
-        print('Done!')
+        print('Done! \n')
     else:
         print('Computing FID...', end=' ')
         for imgs, _ in iter(torch.utils.data.DataLoader(dataset, batch_size=100)):
             imgs = unnormalize_images(imgs.to(DEVICE))
             FID.update(imgs, is_real=True)
         torch.save(FID.state_dict(), fid_path)
-        print('Done!')
+        print('Done! \n')
     best_fid_score = np.inf
 
     # print(torch.cuda.memory_summary())
@@ -114,7 +210,7 @@ def main():
     # Remember to compute the FID score of the loaded model before
     # beginning training loop.
 
-    print('Starting training!')
+    print('Starting training! \n')
     for ep in range(epochs):
         running_d_loss = 0
         running_r1_penalty = 0
@@ -211,7 +307,7 @@ def main():
                 best_fid_score = fid_score
                 torch.save(G_net.state_dict(), os.path.join(ROOT_DIR, 'models', exp_folder, 'generator.pth'))
                 torch.save(D_net.state_dict(), os.path.join(ROOT_DIR, 'models', exp_folder, 'discrimator.pth'))
-                
+
             d_loss_mean = running_d_loss / len(dataloader.sampler)
             g_loss_mean = running_g_loss / len(dataloader.sampler)
             r1_penalty_mean = running_r1_penalty / (len(dataloader.sampler) / r1_interval)
