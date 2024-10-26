@@ -3,6 +3,7 @@ import os
 import gc
 from datetime import datetime
 import numpy as np
+from tqdm import tqdm
 
 from training.loss import DiscriminatorLoss, GeneratorLoss
 from training.stylegan2 import Discriminator, Generator
@@ -42,7 +43,7 @@ def main():
     c_pl = pl_interval / (pl_interval + 1) # Path length lazy regularization correction term for optimizer hyperparams
 
     # Create folder where model of current training run will be stored
-    exp_folder = 'run_' + datetime.today().strftime('%Y-%m-%d')
+    exp_folder = 'run-' + datetime.today().strftime('%Y-%m-%d')
     os.makedirs(os.path.join(ROOT_DIR, 'models', exp_folder), exist_ok=True)
 
     # Enable cuDNN auto-tuner to automatically select kernel
@@ -90,12 +91,28 @@ def main():
 
     # Initialize Frechet Inception Distance object
     FID = FrechetInceptionDistance(device=DEVICE)
-    for imgs, _ in iter(torch.utils.data.DataLoader(dataset, batch_size=100)):
-        imgs = unnormalize_images(imgs.to(DEVICE))
-        FID.update(imgs, is_real=True)
+
+    # Load FID object if it exists, otherwise compute the statistics of 
+    # real image dataset and save FID object.
+    fid_path = os.path.join(ROOT_DIR, 'models', 'fid.pth')
+    if os.path.exists(fid_path):
+        print('Loading FID...', end=' ')
+        FID.load_state_dict(torch.load(fid_path, weights_only=True))
+        print('Done!')
+    else:
+        print('Computing FID...', end=' ')
+        for imgs, _ in iter(torch.utils.data.DataLoader(dataset, batch_size=100)):
+            imgs = unnormalize_images(imgs.to(DEVICE))
+            FID.update(imgs, is_real=True)
+        torch.save(FID.state_dict(), fid_path)
+        print('Done!')
     best_fid_score = np.inf
 
     # print(torch.cuda.memory_summary())
+
+    # TODO: Add loading of trained models if path is provided.
+    # Remember to compute the FID score of the loaded model before
+    # beginning training loop.
 
     print('Starting training!')
     for ep in range(epochs):
@@ -106,7 +123,7 @@ def main():
         running_D_real = 0
         running_D_fake = 0
 
-        for i, (imgs, _)  in enumerate(iter(dataloader), 1):
+        for i, (imgs, _)  in enumerate(tqdm(iter(dataloader), desc=f'Epoch {ep}'), 1):
             # print(f"Iteration: {i}")
             real_imgs = imgs.to(DEVICE)
             
@@ -211,7 +228,7 @@ def main():
             print(f'PL penalty {pl_penalty_mean}')
             print(f'D_real {D_real_mean}')
             print(f'D_fake {D_fake_mean}')
-            print()
+            print(50*'-' + '\n')
 
             tb_writer.add_scalar('FID_score', fid_score, ep)
             tb_writer.add_scalar('D_loss', d_loss_mean, ep)
