@@ -31,6 +31,14 @@ def parser() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
+        '--load_model',
+        type=str,
+        default=None,
+        dest='load_model_path',
+        help='Path to the directory containing the model to be loaded. Defaults to None',
+    )
+
+    parser.add_argument(
         '--epochs',
         '-ep',
         type=int,
@@ -194,17 +202,37 @@ def main():
         FID.load_state_dict(torch.load(fid_path, weights_only=True))
         print('Done! \n')
     else:
-        print('Computing FID...', end=' ')
+        print('Computing real FID statistics...', end=' ')
         for imgs, _ in iter(torch.utils.data.DataLoader(dataset, batch_size=100)):
             imgs = unnormalize_images(imgs.to(DEVICE))
             FID.update(imgs, is_real=True)
         torch.save(FID.state_dict(), fid_path)
         print('Done! \n')
+    
     best_fid_score = np.inf
+    # Load pre-trained discriminator and generator models if provided 
+    # and compute current best FID score.
+    if args.load_model_path is not None:
+        print('Loading pre-trained models...', end=' ')
+        D_net.load_state_dict(torch.load(os.path.join(args.load_model_path, 'discriminator.pth'), weights_only=True))
+        G_net.load_state_dict(torch.load(os.path.join(args.load_model_path, 'generator.pth'), weights_only=True))
+        print('Done! \n')
 
-    # TODO: Add loading of trained models if path is provided.
-    # Remember to compute the FID score of the loaded model before
-    # beginning training loop.
+        # Generate fake images
+        z = torch.randn((100, z_dim), device=DEVICE)
+        fake_imgs, _ = G_net(z)
+        del z
+
+        # Update the FID statistics of fake images and
+        # compute current best FID score.
+        print('Computing fake FID statistics...', end=' ')
+        fake_imgs = unnormalize_images(fake_imgs)
+        FID.update(fake_imgs, is_real=False)
+        best_fid_score = FID.compute()
+        print('Done! \n')
+        print(f'Current FID score: {best_fid_score} \n')
+    else:
+        print('No pre-trained models provided. Training from scratch. \n')
 
     print('Starting training! \n')
     for ep in range(epochs):
@@ -297,7 +325,7 @@ def main():
             if fid_score < best_fid_score:
                 best_fid_score = fid_score
                 torch.save(G_net.state_dict(), os.path.join(ROOT_DIR, 'models', exp_folder, 'generator.pth'))
-                torch.save(D_net.state_dict(), os.path.join(ROOT_DIR, 'models', exp_folder, 'discrimator.pth'))
+                torch.save(D_net.state_dict(), os.path.join(ROOT_DIR, 'models', exp_folder, 'discriminator.pth'))
 
             stats = {}
             stats['FID score'] = fid_score
