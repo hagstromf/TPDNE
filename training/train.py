@@ -145,7 +145,7 @@ def main():
 
     # Enable cuDNN auto-tuner to automatically select kernel
     # for best performance when computing convolutions. 
-    # Significantly increases speed of training
+    # Significantly increases speed of training.
     torch.backends.cudnn.benchmark = True 
 
     # Initialize tensorboard writer
@@ -175,9 +175,6 @@ def main():
     D_opt = torch.optim.Adam(D_net.parameters(), lr=c_r1*lr, betas=(beta1**c_r1, beta2**c_r1))
     G_opt = torch.optim.Adam(G_net.parameters(), lr=c_pl*lr, betas=(beta1**c_pl, beta2**c_pl))
 
-    # D_opt_pen = torch.optim.Adam(D_net.parameters(), lr=c_r1*lr, betas=(beta1**c_r1, beta2**c_r1))
-    # G_opt_pen = torch.optim.Adam(G_net.parameters(), lr=c_pl*lr, betas=(beta1**c_pl, beta2**c_pl))
-
     # Initialize discrimator and generator loss
     D_loss = DiscriminatorLoss().to(DEVICE)
     G_loss = GeneratorLoss().to(DEVICE)
@@ -205,14 +202,13 @@ def main():
         print('Done! \n')
     best_fid_score = np.inf
 
-    # print(torch.cuda.memory_summary())
-
     # TODO: Add loading of trained models if path is provided.
     # Remember to compute the FID score of the loaded model before
     # beginning training loop.
 
     print('Starting training! \n')
     for ep in range(epochs):
+        # Initialize running statistics
         running_d_loss = 0
         running_r1_penalty = 0
         running_g_loss = 0
@@ -221,79 +217,73 @@ def main():
         running_D_fake = 0
 
         for i, (imgs, _)  in enumerate(tqdm(iter(dataloader), desc=f'Epoch {ep}'), 1):
-            # print(f"Iteration: {i}")
+            # Move images to DEVICE
             real_imgs = imgs.to(DEVICE)
             
+            # Generate mini-batch of fake images
             z = torch.randn((batch_size, z_dim), device=DEVICE)
             fake_imgs, ws = G_net(z, style_mix_prob=0.9)
             del z
            
+            # Compute discriminator loss and regularization terms
             do_r1_reg = i % r1_interval == 0
             d_loss, r1_penalty, D_real, D_fake = D_loss(D_net, real_imgs, fake_imgs, do_reg=do_r1_reg)
+
+            # Update running discriminator statistics
             running_d_loss += d_loss.item() * real_imgs.shape[0]
+            running_r1_penalty += r1_penalty.item() * real_imgs.shape[0] 
             running_D_real += D_real * real_imgs.shape[0]
-            running_D_fake += D_fake * real_imgs.shape[0]
-            if do_r1_reg:
-                # r1_penalty = r1_interval * r1_penalty
-                running_r1_penalty += r1_penalty.item() * real_imgs.shape[0]   
+            running_D_fake += D_fake * real_imgs.shape[0]  
             del real_imgs
 
-            # d_loss = d_loss + r1_interval * r1_penalty
-
+            # Perform backward pass of loss and optimization step on discriminator
             D_opt.zero_grad(set_to_none=True)
             d_loss.backward(retain_graph=do_r1_reg)
             D_opt.step()
             del d_loss
 
+            # Perform backward pass of R1 penalty and optimization step on discriminator
             if do_r1_reg:
-                # print("Doing r1 regularization backpass")
                 D_opt.zero_grad(set_to_none=True)
-                # D_opt_pen.zero_grad(set_to_none=True)
-                # D_opt_pen.load_state_dict(D_opt.state_dict())
                 r1_penalty = r1_interval * r1_penalty
                 r1_penalty.backward()
-                # D_opt_pen.step()
                 D_opt.step()
-                del r1_penalty
-                # print("Success!!!")
+            del r1_penalty
 
+            # Compute generator loss and regularization terms
             do_pl_reg = i % pl_interval == 0
             g_loss, pl_penalty = G_loss(D_net, fake_imgs, ws, do_reg=do_pl_reg)
+            
+            # Update running generator statistics
             running_g_loss += g_loss.item() * fake_imgs.shape[0]
-            if do_pl_reg:
-                # pl_penalty = pl_interval * pl_penalty
-                running_pl_penalty += pl_penalty.item() * fake_imgs.shape[0]
+            running_pl_penalty += pl_penalty.item() * fake_imgs.shape[0]
             del fake_imgs, ws
 
-            # g_loss = g_loss + pl_interval * pl_penalty
-
+            # Perform backward pass of loss and optimization step on generator
             G_opt.zero_grad(set_to_none=True)
             g_loss.backward(retain_graph=do_pl_reg)
             G_opt.step()
             del g_loss
 
+            # Perform backward pass of path length penalty and optimization step on generator
             if do_pl_reg:
-                # print("Doing pl regularization backpass")
                 G_opt.zero_grad(set_to_none=True)
-                # G_opt_pen.zero_grad(set_to_none=True)
-                # G_opt_pen.load_state_dict(G_opt.state_dict())
                 pl_penalty = pl_interval * pl_penalty
                 pl_penalty.backward()
-                # G_opt_pen.step()
                 G_opt.step()
-                del pl_penalty
-                # print("Success!!!")
-            
+            del pl_penalty
+
             gc.collect()
             torch.cuda.empty_cache()
 
-        # print(torch.cuda.memory_summary())
-
         with torch.no_grad():
+            # Generate fake images
             z = torch.randn((50, z_dim), device=DEVICE)
             fake_imgs, _ = G_net(z)
             del z
 
+            # Update the FID statistics of fake images and
+            # compute current FID score.
             fake_imgs = unnormalize_images(fake_imgs)
             FID.update(fake_imgs, is_real=False)
             fid_score = FID.compute()
@@ -323,9 +313,6 @@ def main():
 
             gc.collect()
             torch.cuda.empty_cache()
-            # print(torch.cuda.memory_summary())
-
-
 
 
 if __name__ == '__main__':
