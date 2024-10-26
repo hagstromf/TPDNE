@@ -10,7 +10,7 @@ from training.loss import DiscriminatorLoss, GeneratorLoss
 from training.stylegan2 import Discriminator, Generator
 
 from training.constants import ROOT_DIR
-from training.utils import load_images, unnormalize_images, parser, print_training_config, print_training_statistics, record_training_statistics
+from training.utils import load_images, unnormalize_images, print_training_config
 
 from torchsummary import summary
 import torchinfo
@@ -124,6 +124,7 @@ def parser() -> argparse.Namespace:
 def main():
     print()
     args = parser()
+    print_training_config(args)
 
     epochs = args.epochs
     z_dim = args.z_dim
@@ -148,7 +149,7 @@ def main():
     torch.backends.cudnn.benchmark = True 
 
     # Initialize tensorboard writer
-    tb_writer = SummaryWriter()
+    tb_writer = SummaryWriter(log_dir=os.path.join('runs', exp_folder))
 
     # Set device
     if torch.cuda.is_available():

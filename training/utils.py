@@ -3,8 +3,12 @@ from torch.utils.data import Dataset, Subset
 from torchvision import datasets
 from torchvision.transforms import v2, functional as F
 
+from torch.utils.tensorboard import SummaryWriter
+
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
+
+import argparse
 
 def load_images(path: str | Path, 
                 res: int, 
@@ -33,3 +37,9 @@ def unnormalize_images(imgs: torch.Tensor) -> torch.Tensor:
     mean = torch.ones_like(imgs) * 0.5
     std = torch.ones_like(imgs) * 0.5
     return imgs * std + mean
+
+def print_training_config(args: argparse.Namespace) -> None:
+    print('Training configuration:')
+    for k, v in vars(args).items():
+        print(f'{k} = {v}')
+    print()
