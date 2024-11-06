@@ -56,3 +56,7 @@ def print_training_statistics(stats: Dict[str, float], epoch: int) -> None:
 def record_training_statistics(stats: Dict[str, float], tb_writer: SummaryWriter, epoch: int) -> None:
     for k, v in stats.items():
         tb_writer.add_scalar(k, v, epoch)
+
+
+if __name__ == '__main__':
+    pass

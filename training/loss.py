@@ -93,3 +93,7 @@ class DiscriminatorLoss(nn.Module):
             r1_penalty = self.r1_reg(real_images_tmp, logits_real)
         
         return loss, r1_penalty, D_real, D_fake
+
+
+if __name__ == '__main__':
+    pass
