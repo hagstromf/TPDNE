@@ -169,15 +169,12 @@ def main():
     D_net = Discriminator(res).to(DEVICE)
     G_net = Generator(z_dim, w_dim, res).to(DEVICE)
     
-    # summary(G.mapNet, input_size=(z_dim,))
-    # torchinfo.summary(G.mapNet, input_size=(z_dim,), batch_dim=0)
-    # print()
-    # summary(G.syntNet, input_size=(G.syntNet.num_ws, w_dim))
-    # torchinfo.summary(G.syntNet, input_size=(G.syntNet.num_ws, w_dim), batch_dim=0)
-    # print()
-    # summary(D, input_size=(3, res, res))
-    # torchinfo.summary(D, input_size=(3, res, res), batch_dim=0)
-    # print()
+    torchinfo.summary(G_net.mapNet, input_size=(batch_size, z_dim))
+    print()
+    torchinfo.summary(G_net.syntNet, input_size=(batch_size, G_net.syntNet.num_ws, w_dim))
+    print()
+    torchinfo.summary(D_net, input_size=(batch_size, 3, res, res))
+    print()
 
     # Initialize discrimator and generator optimizers
     D_opt = torch.optim.Adam(D_net.parameters(), lr=c_r1*lr, betas=(beta1**c_r1, beta2**c_r1))
