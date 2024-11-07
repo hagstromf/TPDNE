@@ -6,11 +6,11 @@ from datetime import datetime
 import numpy as np
 from tqdm import tqdm
 
-from training.loss import DiscriminatorLoss, GeneratorLoss
-from training.stylegan2 import Discriminator, Generator
+from src.loss import DiscriminatorLoss, GeneratorLoss
+from src.stylegan2 import Discriminator, Generator
 
-from training.constants import ROOT_DIR
-from training.utils import load_images, unnormalize_images, print_training_config, print_training_statistics, record_training_statistics
+from src.constants import ROOT_DIR
+from src.utils import load_images, unnormalize_images, print_training_config, print_training_statistics, record_training_statistics
 
 from torchsummary import summary
 import torchinfo
