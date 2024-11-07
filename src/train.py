@@ -12,12 +12,10 @@ from src.stylegan2 import Discriminator, Generator
 from src.constants import ROOT_DIR
 from src.utils import load_images, unnormalize_images, print_training_config, print_training_statistics, record_training_statistics
 
-from torchsummary import summary
 import torchinfo
 
 from torch.utils.tensorboard import SummaryWriter
 
-from torchvision.transforms import functional as F
 import matplotlib.pyplot as plt
 
 from torcheval.metrics import FrechetInceptionDistance
