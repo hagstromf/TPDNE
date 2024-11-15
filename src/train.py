@@ -215,28 +215,12 @@ def main():
         torch.save(FID.state_dict(), fid_path)
         print('Done! \n')
     
-    best_fid_score = np.inf
-    # Load pre-trained discriminator and generator models if provided 
-    # and compute current best FID score.
+    # Load pre-trained discriminator and generator networks if provided.
     if args.load_model_path is not None:
         print('Loading pre-trained models...', end=' ')
         D_net.load_state_dict(torch.load(os.path.join(args.load_model_path, 'discriminator.pth'), weights_only=True))
         G_net.load_state_dict(torch.load(os.path.join(args.load_model_path, 'generator.pth'), weights_only=True))
         print('Done! \n')
-
-        # Generate fake images
-        z = torch.randn((100, z_dim), device=DEVICE)
-        fake_imgs, _ = G_net(z)
-        del z
-
-        # Update the FID statistics of fake images and
-        # compute current best FID score.
-        print('Computing fake FID statistics...', end=' ')
-        fake_imgs = unnormalize_images(fake_imgs)
-        FID.update(fake_imgs, is_real=False)
-        best_fid_score = FID.compute()
-        print('Done! \n')
-        print(f'Current FID score: {best_fid_score} \n')
     else:
         print('No pre-trained models provided. Training from scratch. \n')
 
