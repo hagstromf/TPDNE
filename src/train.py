@@ -196,7 +196,6 @@ def main():
     # Load data
     dataset, _ = load_images(os.path.join(ROOT_DIR, 'data', 'PokemonData'), res=res, test_size=0.99)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
-
     # Initialize Frechet Inception Distance object
     FID = FrechetInceptionDistance(device=DEVICE)
 
@@ -210,8 +209,11 @@ def main():
     else:
         print('Computing real FID statistics...', end=' ')
         for imgs, _ in iter(torch.utils.data.DataLoader(dataset, batch_size=100)):
-            imgs = unnormalize_images(imgs.to(DEVICE))
+            # Scale image pixel values to range [0, 1]
+            imgs = imgs / 255.0
             FID.update(imgs, is_real=True)
+
+        os.makedirs(os.path.join(ROOT_DIR, 'models'), exist_ok=True)
         torch.save(FID.state_dict(), fid_path)
         print('Done! \n')
     
@@ -235,8 +237,8 @@ def main():
         running_D_fake = 0
 
         for i, (imgs, _)  in enumerate(tqdm(iter(dataloader), desc=f'Epoch {ep}'), 1):
-            # Move images to DEVICE
-            real_imgs = imgs.to(DEVICE)
+            # Move images to DEVICE and scale pixel values to range [0, 1]
+            real_imgs = imgs.to(DEVICE) / 255.0
             
             # Generate mini-batch of fake images
             z = torch.randn((batch_size, z_dim), device=DEVICE)
@@ -305,7 +307,6 @@ def main():
 
                 # Update the FID statistics of fake images and
                 # compute current FID score.
-                fake_imgs = unnormalize_images(fake_imgs)
                 FID.update(fake_imgs, is_real=False)
                 fid_score = FID.compute()
 

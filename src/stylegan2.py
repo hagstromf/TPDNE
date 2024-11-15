@@ -447,7 +447,7 @@ class SynthesisNet(nn.Module):
 
             idx += 3
 
-        return F.tanh(rgb)
+        return F.sigmoid(rgb)
 
 
 class Generator(nn.Module):

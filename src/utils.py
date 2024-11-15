@@ -17,8 +17,6 @@ def load_images(path: str | Path,
     
     transform = v2.Compose([v2.Resize((res, res)),
                             v2.ToImage(),
-                            v2.ToDtype(torch.float32, scale=True),
-                            v2.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                             ])
     
     dataset = datasets.ImageFolder(path, transform=transform)
