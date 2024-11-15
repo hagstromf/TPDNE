@@ -6,6 +6,9 @@ import numpy as np
 
 from typing import Dict, Any, Optional, List
 
+# import torch.autograd.profiler as profiler
+from torch.profiler import profile, record_function, ProfilerActivity
+
 class EqualizedLinear(nn.Module):
     def __init__(self,
                  in_dim: int,
@@ -126,7 +129,7 @@ class EqualizedConv2dModulated(nn.Module):
 
         if self.demodulate:
             # Demodulate weight
-            sigma = torch.sqrt(torch.sum(W**2, dim=(-3, -2, -1), keepdim=True) + 1e-8)
+            sigma = torch.sqrt(torch.sum(W**2, dim=(-3, -2, -1), keepdim=True) + 1e-8).detach()
             W = W / sigma
 
         # Reshape input and weight such that convolution layer sees one sample 
