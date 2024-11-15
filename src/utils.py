@@ -37,17 +37,21 @@ def unnormalize_images(imgs: torch.Tensor) -> torch.Tensor:
     return imgs * std + mean
 
 def print_training_config(args: argparse.Namespace) -> None:
-    print('Training configuration:')
-    for k, v in vars(args).items():
-        print(f'{k} = {v}')
     print()
+    print(50*'-')
+    print(f'{'Training configuration':^50} \n')
+    for k, v in vars(args).items():
+        print(f'{k:<20}{str(v):>30}')
+    print()
+    print(50*'-' + '\n')
 
 def print_training_statistics(stats: Dict[str, float], epoch: int) -> None:
     print()
-    print(50*'-' + '\n')
-    print(f'Epoch {epoch} completed with:')
+    print(50*'-')
+    # print(f'{f'Epoch {epoch} completed with:':^50} \n')
+    print(f'{f'Epoch {epoch}':^50} \n')
     for k, v in stats.items():
-        print(f'{k} = {v}')
+        print(f'{k:<20}{v:>30}')
     print()
     print(50*'-' + '\n')
 
