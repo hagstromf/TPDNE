@@ -20,6 +20,9 @@ import matplotlib.pyplot as plt
 
 from torcheval.metrics import FrechetInceptionDistance
 
+# import torch.autograd.profiler as profiler
+from torch.profiler import profile, record_function, ProfilerActivity
+
 
 # TODO: Implement training loop. Utilize at least DataParallel to split 
 # batch computaion to multiple GPUs. Consider using DistributedDataParallel
@@ -43,6 +46,14 @@ def parser() -> argparse.Namespace:
         default=100,
         dest='epochs',
         help='Number of epochs to train for.',
+    )
+
+    parser.add_argument(
+        '--snap_freq',
+        type=int,
+        dest='snapshot_frequency',
+        default=10,
+        help='The frequency in terms of epochs with which to take snapshot of current model.'
     )
 
     parser.add_argument(
@@ -133,6 +144,7 @@ def main():
     print_training_config(args)
 
     epochs = args.epochs
+    snap_freq = args.snapshot_frequency
     z_dim = args.z_dim
     w_dim = args.w_dim
     res = args.resolution
@@ -145,9 +157,8 @@ def main():
     c_r1 = r1_interval / (r1_interval + 1) # R1 lazy regularization correction term for optimizer hyperparams
     c_pl = pl_interval / (pl_interval + 1) # Path length lazy regularization correction term for optimizer hyperparams
 
-    # Create folder where model of current training run will be stored
-    exp_folder = 'run-' + datetime.today().strftime('%Y-%m-%d')
-    os.makedirs(os.path.join(ROOT_DIR, 'models', exp_folder), exist_ok=True)
+    # Create name for current training run
+    run_name = 'run-' + datetime.today().strftime('%Y-%m-%d')
 
     # Enable cuDNN auto-tuner to automatically select kernel
     # for best performance when computing convolutions. 
@@ -155,7 +166,7 @@ def main():
     torch.backends.cudnn.benchmark = True 
 
     # Initialize tensorboard writer
-    tb_writer = SummaryWriter(log_dir=os.path.join('runs', exp_folder))
+    tb_writer = SummaryWriter(log_dir=os.path.join('runs', run_name))
 
     # Set device
     if torch.cuda.is_available():
@@ -247,7 +258,7 @@ def main():
             z = torch.randn((batch_size, z_dim), device=DEVICE)
             fake_imgs, ws = G_net(z, style_mix_prob=0.9)
             del z
-           
+
             # Compute discriminator loss and regularization terms
             do_r1_reg = i % r1_interval == 0
             d_loss, r1_penalty, D_real, D_fake = D_loss(D_net, real_imgs, fake_imgs, do_reg=do_r1_reg)
@@ -276,7 +287,7 @@ def main():
             # Compute generator loss and regularization terms
             do_pl_reg = i % pl_interval == 0
             g_loss, pl_penalty = G_loss(D_net, fake_imgs, ws, do_reg=do_pl_reg)
-            
+
             # Update running generator statistics
             running_g_loss += g_loss.item() * fake_imgs.shape[0]
             running_pl_penalty += pl_penalty.item() * fake_imgs.shape[0]
@@ -300,30 +311,34 @@ def main():
             torch.cuda.empty_cache()
 
         with torch.no_grad():
-            # Generate fake images
-            z = torch.randn((50, z_dim), device=DEVICE)
-            fake_imgs, _ = G_net(z)
-            del z
-
-            # Update the FID statistics of fake images and
-            # compute current FID score.
-            fake_imgs = unnormalize_images(fake_imgs)
-            FID.update(fake_imgs, is_real=False)
-            fid_score = FID.compute()
-
-            # if (ep+1) % 10 == 0:
-            #     for i in range(3):
-            #         plt.imshow(F.to_pil_image(fake_imgs[i]))
-            #         plt.show()
-            del fake_imgs  
-
-            if fid_score < best_fid_score:
-                best_fid_score = fid_score
-                torch.save(G_net.state_dict(), os.path.join(ROOT_DIR, 'models', exp_folder, 'generator.pth'))
-                torch.save(D_net.state_dict(), os.path.join(ROOT_DIR, 'models', exp_folder, 'discriminator.pth'))
-
             stats = {}
-            stats['FID score'] = fid_score
+
+            if ep % snap_freq == 0:
+                # Generate fake images
+                z = torch.randn((50, z_dim), device=DEVICE)
+                fake_imgs, _ = G_net(z)
+                del z
+
+                # Update the FID statistics of fake images and
+                # compute current FID score.
+                fake_imgs = unnormalize_images(fake_imgs)
+                FID.update(fake_imgs, is_real=False)
+                fid_score = FID.compute()
+
+                stats['FID score'] = fid_score
+
+                # if (ep+1) % 10 == 0:
+                #     for i in range(3):
+                #         plt.imshow(F.to_pil_image(fake_imgs[i]))
+                #         plt.show()
+                del fake_imgs  
+
+                # Save models to snapshot folder
+                save_path = os.path.join(ROOT_DIR, 'models', run_name, 'snapshots', 'epoch_' + str(ep))
+                os.makedirs(save_path, exist_ok=True)
+                torch.save(G_net.state_dict(), os.path.join(save_path, 'generator.pth'))
+                torch.save(D_net.state_dict(), os.path.join(save_path, 'discriminator.pth'))
+
             stats['Discrimator loss'] = running_d_loss / len(dataloader.sampler)
             stats['Generator loss'] = running_g_loss / len(dataloader.sampler)
             stats['R1 penalty'] = running_r1_penalty / (len(dataloader.sampler) / r1_interval)
