@@ -184,11 +184,11 @@ def main():
                                 map_kwargs=map_kwargs, 
                                 synt_kwargs=synt_kwargs).to(DEVICE)
     
-    torchinfo.summary(G_net.mapNet, input_size=(batch_size, z_dim))
+    torchinfo.summary(G_net.mapNet, input_size=(batch_size, z_dim), device=DEVICE)
     print()
-    torchinfo.summary(G_net.syntNet, input_size=(batch_size, G_net.syntNet.num_ws, w_dim))
+    torchinfo.summary(G_net.syntNet, input_size=(batch_size, G_net.syntNet.num_ws, w_dim), device=DEVICE)
     print()
-    torchinfo.summary(D_net, input_size=(batch_size, 3, res, res))
+    torchinfo.summary(D_net, input_size=(batch_size, 3, res, res), device=DEVICE)
     print()
 
     # Initialize discrimator and generator optimizers
@@ -202,12 +202,12 @@ def main():
     # Load data
     dataset, _ = load_images(os.path.join(ROOT_DIR, 'data', 'PokemonData'), res=res, test_size=0.99)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
-    # Initialize Frechet Inception Distance object
-    FID = FrechetInceptionDistance(device=DEVICE)
 
+    # Initialize Frechet Inception Distance object
+    FID = FrechetInceptionDistance()
     # Load FID object if it exists, otherwise compute the statistics of 
     # real image dataset and save FID object.
-    fid_path = os.path.join(ROOT_DIR, 'models', 'fid.pth')
+    fid_path = os.path.join(ROOT_DIR, 'models', 'fid_pokemon.pth')
     if os.path.exists(fid_path):
         print('Loading FID...', end=' ')
         FID.load_state_dict(torch.load(fid_path, weights_only=True))
@@ -222,7 +222,9 @@ def main():
         os.makedirs(os.path.join(ROOT_DIR, 'models'), exist_ok=True)
         torch.save(FID.state_dict(), fid_path)
         print('Done! \n')
-    
+    # Make sure all attributes of FID object are on the same device
+    FID.to(DEVICE)
+
     # Load pre-trained discriminator and generator networks if provided.
     if args.load_model_path is not None:
         print('Loading pre-trained models...', end=' ')
