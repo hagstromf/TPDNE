@@ -249,7 +249,7 @@ def main():
             real_imgs = imgs.to(DEVICE) / 255.0
             
             # Generate mini-batch of fake images
-            z = torch.randn((batch_size, z_dim), device=DEVICE)
+            z = torch.randn((real_imgs.shape[0], z_dim), device=DEVICE)
             fake_imgs, ws = G_net(z, style_mix_prob=0.9)
             del z
 
