@@ -467,6 +467,8 @@ class Generator(nn.Module):
         if map_kwargs is None:
             map_kwargs = {}
 
+        self.z_dim = z_dim
+
         self.syntNet = SynthesisNet(w_dim, out_res, **synt_kwargs)
         self.mapNet = MappingNet(z_dim, w_dim, **map_kwargs)
 
@@ -481,6 +483,11 @@ class Generator(nn.Module):
                 ws[:, cutoff:] = self.mapNet(torch.randn_like(z)).unsqueeze(1).repeat(1, ws.shape[1], 1)[:, cutoff:]
 
         return self.syntNet(ws), ws
+    
+    def generate_images(self, num_imgs: int, style_mix_prob: float = 0.) -> torch.Tensor:
+        z = torch.randn((num_imgs, self.z_dim), device=next(self.parameters()).device)
+        fake_imgs, _ = self.forward(z, style_mix_prob)
+        return fake_imgs
     
 
 class DiscriminatorBlock(nn.Module):
