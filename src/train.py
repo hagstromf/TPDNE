@@ -177,13 +177,23 @@ def main():
     act_kwargs = {'negative_slope': 0.2}
     map_kwargs = synt_kwargs = {'act_kwargs': act_kwargs}
     # Initialize discrimator and generator networks
-    D_net = Discriminator(res, act_kwargs=act_kwargs).to(DEVICE)
-    G_net = Generator(z_dim, 
-                                w_dim, 
-                                res, 
-                                map_kwargs=map_kwargs, 
-                                synt_kwargs=synt_kwargs).to(DEVICE)
+    D_net = Discriminator(res, act_kwargs=act_kwargs)
+    G_net = Generator(z_dim, w_dim, res, map_kwargs=map_kwargs, synt_kwargs=synt_kwargs)
     
+    # Load pre-trained discriminator and generator networks if provided.
+    if args.load_model_path is not None:
+        print('Loading pre-trained models...', end=' ')
+        D_net.load_state_dict(torch.load(os.path.join(args.load_model_path, 'discriminator.pth'), weights_only=True))
+        G_net.load_state_dict(torch.load(os.path.join(args.load_model_path, 'generator.pth'), weights_only=True))
+        print('Done! \n')
+    else:
+        print('No pre-trained models provided. Training from scratch. \n')
+
+    # Move networks to DEVICE
+    D_net.to(DEVICE)
+    G_net.to(DEVICE)
+    
+    # Print summaries of the networks
     torchinfo.summary(G_net.mapNet, input_size=(batch_size, z_dim), device=DEVICE)
     print()
     torchinfo.summary(G_net.syntNet, input_size=(batch_size, G_net.syntNet.num_ws, w_dim), device=DEVICE)
@@ -224,15 +234,6 @@ def main():
         print('Done! \n')
     # Make sure all attributes of FID object are on the same device
     FID.to(DEVICE)
-
-    # Load pre-trained discriminator and generator networks if provided.
-    if args.load_model_path is not None:
-        print('Loading pre-trained models...', end=' ')
-        D_net.load_state_dict(torch.load(os.path.join(args.load_model_path, 'discriminator.pth'), weights_only=True))
-        G_net.load_state_dict(torch.load(os.path.join(args.load_model_path, 'generator.pth'), weights_only=True))
-        print('Done! \n')
-    else:
-        print('No pre-trained models provided. Training from scratch. \n')
 
     print('Starting training! \n')
     for ep in range(epochs):
