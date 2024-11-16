@@ -10,7 +10,7 @@ from src.loss import DiscriminatorLoss, GeneratorLoss
 from src.stylegan2 import Discriminator, Generator
 
 from src.constants import ROOT_DIR
-from src.utils import load_images, unnormalize_images, print_training_config, print_training_statistics, record_training_statistics
+from src.utils import load_images, compute_FID_score, print_training_config, print_training_statistics, record_training_statistics
 
 import torchinfo
 
@@ -308,23 +308,13 @@ def main():
             stats = {}
 
             if ep % snap_freq == 0:
-                # Generate fake images
-                z = torch.randn((50, z_dim), device=DEVICE)
-                fake_imgs, _ = G_net(z)
-                del z
-
-                # Update the FID statistics of fake images and
-                # compute current FID score.
-                FID.update(fake_imgs, is_real=False)
-                fid_score = FID.compute()
-
-                stats['FID score'] = fid_score
+                # Compute and store current FID score
+                stats['FID score'] = compute_FID_score(FID, G_net, num_imgs=50)
 
                 # if (ep+1) % 10 == 0:
                 #     for i in range(3):
                 #         plt.imshow(F.to_pil_image(fake_imgs[i]))
                 #         plt.show()
-                del fake_imgs  
 
                 # Save models to snapshot folder
                 save_path = os.path.join(ROOT_DIR, 'models', run_name, 'snapshots', 'epoch_' + str(ep))

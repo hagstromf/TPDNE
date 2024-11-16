@@ -8,6 +8,10 @@ from torch.utils.tensorboard import SummaryWriter
 from pathlib import Path
 from typing import Optional, Dict
 
+from torcheval.metrics import FrechetInceptionDistance
+
+from src.stylegan2 import Generator
+
 import argparse
 
 def load_images(path: str | Path, 
@@ -59,6 +63,23 @@ def record_training_statistics(stats: Dict[str, float], tb_writer: SummaryWriter
     for k, v in stats.items():
         tb_writer.add_scalar(k, v, epoch)
 
+def compute_FID_score(fid: FrechetInceptionDistance, G_net: Generator, num_imgs: int = 1000) -> torch.Tensor:
+    # Store state of FID statistics before updating fake image statistics
+    fid_state = fid.state_dict()
+
+    # Update the FID statistics of fake images and compute current FID score
+    fake_imgs = G_net.generate_images(num_imgs)
+    fid.update(fake_imgs, is_real=False)
+    fid_score =  fid.compute()
+
+    # Reset FID statistics to defaults and load state from
+    # before the fake images statistics were updated. This is 
+    # done so that the current FID score isn't influenced by the 
+    # statistics of previously generated fake images.
+    fid.reset()
+    fid.load_state_dict(fid_state)
+    
+    return fid_score
 
 if __name__ == '__main__':
     pass
