@@ -174,9 +174,15 @@ def main():
     else:
         DEVICE = torch.device('cpu')
 
+    act_kwargs = {'negative_slope': 0.2}
+    map_kwargs = synt_kwargs = {'act_kwargs': act_kwargs}
     # Initialize discrimator and generator networks
-    D_net = Discriminator(res).to(DEVICE)
-    G_net = Generator(z_dim, w_dim, res).to(DEVICE)
+    D_net = Discriminator(res, act_kwargs=act_kwargs).to(DEVICE)
+    G_net = Generator(z_dim, 
+                                w_dim, 
+                                res, 
+                                map_kwargs=map_kwargs, 
+                                synt_kwargs=synt_kwargs).to(DEVICE)
     
     torchinfo.summary(G_net.mapNet, input_size=(batch_size, z_dim))
     print()
