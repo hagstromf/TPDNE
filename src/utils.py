@@ -1,7 +1,8 @@
 import torch
 from torch.utils.data import Dataset, Subset
 from torchvision import datasets
-from torchvision.transforms import v2, functional as F
+from torchvision.transforms import v2, ToPILImage #, functional as F
+from torchvision.utils import make_grid
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -9,8 +10,6 @@ from pathlib import Path
 from typing import Optional, Dict
 
 from torcheval.metrics import FrechetInceptionDistance
-
-from src.stylegan2 import Generator
 
 import argparse
 
@@ -63,12 +62,11 @@ def record_training_statistics(stats: Dict[str, float], tb_writer: SummaryWriter
     for k, v in stats.items():
         tb_writer.add_scalar(k, v, epoch)
 
-def compute_FID_score(fid: FrechetInceptionDistance, G_net: Generator, num_imgs: int = 1000) -> torch.Tensor:
+def compute_FID_score(fid: FrechetInceptionDistance, fake_imgs: torch.Tensor) -> torch.Tensor:
     # Store state of FID statistics before updating fake image statistics
     fid_state = fid.state_dict()
 
     # Update the FID statistics of fake images and compute current FID score
-    fake_imgs = G_net.generate_images(num_imgs)
     fid.update(fake_imgs, is_real=False)
     fid_score =  fid.compute()
 

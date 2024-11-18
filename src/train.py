@@ -249,7 +249,7 @@ def main():
             # Move images to DEVICE and scale pixel values to range [0, 1]
             real_imgs = imgs.to(DEVICE) / 255.0
             
-            # Generate mini-batch of fake images
+            # Generate mini-batch of fake images and intermediate latent vectors (ws)
             z = torch.randn((real_imgs.shape[0], z_dim), device=DEVICE)
             fake_imgs, ws = G_net(z, style_mix_prob=0.9)
             del z
@@ -309,8 +309,11 @@ def main():
             stats = {}
 
             if ep % snap_freq == 0:
+                # Generate fake images
+                fake_imgs = G_net.generate_images(num_imgs=50)
+
                 # Compute and store current FID score
-                stats['FID score'] = compute_FID_score(FID, G_net, num_imgs=50)
+                stats['FID score'] = compute_FID_score(FID, fake_imgs)
 
                 # if (ep+1) % 10 == 0:
                 #     for i in range(3):
@@ -323,6 +326,7 @@ def main():
                 torch.save(G_net.state_dict(), os.path.join(save_path, 'generator.pth'))
                 torch.save(D_net.state_dict(), os.path.join(save_path, 'discriminator.pth'))
 
+            # Compute and store mean of running statistics
             stats['Discrimator loss'] = running_d_loss / len(dataloader.sampler)
             stats['Generator loss'] = running_g_loss / len(dataloader.sampler)
             stats['R1 penalty'] = running_r1_penalty / (len(dataloader.sampler) / r1_interval)
