@@ -10,7 +10,8 @@ from src.loss import DiscriminatorLoss, GeneratorLoss
 from src.stylegan2 import Discriminator, Generator
 
 from src.constants import ROOT_DIR
-from src.utils import load_images, compute_FID_score, print_training_config, print_training_statistics, record_training_statistics
+from src.utils import load_images, compute_FID_score, print_training_config, \
+                    print_training_statistics, record_training_statistics, save_image_grid
 
 import torchinfo
 
@@ -315,14 +316,15 @@ def main():
                 # Compute and store current FID score
                 stats['FID score'] = compute_FID_score(FID, fake_imgs)
 
-                # if (ep+1) % 10 == 0:
-                #     for i in range(3):
-                #         plt.imshow(F.to_pil_image(fake_imgs[i]))
-                #         plt.show()
+                # Create path to snapshot folder
+                save_path = os.path.join(ROOT_DIR, 'snapshots', run_name, 'epoch_' + str(ep))
+                os.makedirs(save_path, exist_ok=True)
+
+                # Save grid of generated fake images to snapshot folder
+                save_image_grid(fake_imgs[:16], save_path, nrow=4)
+                del fake_imgs
 
                 # Save models to snapshot folder
-                save_path = os.path.join(ROOT_DIR, 'models', run_name, 'snapshots', 'epoch_' + str(ep))
-                os.makedirs(save_path, exist_ok=True)
                 torch.save(G_net.state_dict(), os.path.join(save_path, 'generator.pth'))
                 torch.save(D_net.state_dict(), os.path.join(save_path, 'discriminator.pth'))
 

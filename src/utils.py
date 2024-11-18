@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import Dataset, Subset
 from torchvision import datasets
-from torchvision.transforms import v2, ToPILImage #, functional as F
+from torchvision.transforms import v2, ToPILImage
 from torchvision.utils import make_grid
 
 from torch.utils.tensorboard import SummaryWriter
@@ -12,6 +12,7 @@ from typing import Optional, Dict
 from torcheval.metrics import FrechetInceptionDistance
 
 import argparse
+import os
 
 def load_images(path: str | Path, 
                 res: int, 
@@ -33,6 +34,10 @@ def load_images(path: str | Path,
     trainset = Subset(dataset, range(n_test, n)) 
 
     return trainset, testset
+
+def save_image_grid(imgs: torch.Tensor, path: str | Path,  nrow: int = 3) -> None:
+    grid = ToPILImage()(make_grid(imgs, nrow=nrow))
+    grid.save(os.path.join(path, 'gen_img_grid.jpeg'))
 
 def unnormalize_images(imgs: torch.Tensor) -> torch.Tensor:
     mean = torch.ones_like(imgs) * 0.5
