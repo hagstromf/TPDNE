@@ -10,19 +10,16 @@ from src.loss import DiscriminatorLoss, GeneratorLoss
 from src.stylegan2 import Discriminator, Generator
 
 from src.constants import ROOT_DIR
-from src.utils import load_images, compute_FID_score, print_training_config, \
-                    print_training_statistics, record_training_statistics, save_image_grid
+import src.utils as utils
 
 import torchinfo
 
 from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data import DataLoader
 
 import matplotlib.pyplot as plt
 
 from torcheval.metrics import FrechetInceptionDistance
-
-# import torch.autograd.profiler as profiler
-from torch.profiler import profile, record_function, ProfilerActivity
 
 
 # TODO: Implement training loop. Utilize at least DataParallel to split 
@@ -142,7 +139,7 @@ def parser() -> argparse.Namespace:
 def main():
     print()
     args = parser()
-    print_training_config(args)
+    utils.print_training_config(args)
 
     epochs = args.epochs
     snap_freq = args.snapshot_frequency
@@ -211,8 +208,8 @@ def main():
     G_loss = GeneratorLoss().to(DEVICE)
 
     # Load data
-    dataset, _ = load_images(os.path.join(ROOT_DIR, 'data', 'PokemonData'), res=res, test_size=0.99)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
+    dataset, _ = utils.load_images(os.path.join(ROOT_DIR, 'data', 'PokemonData'), res=res, test_size=0.99)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
 
     # Initialize Frechet Inception Distance object
     FID = FrechetInceptionDistance()
@@ -224,8 +221,9 @@ def main():
         FID.load_state_dict(torch.load(fid_path, weights_only=True))
         print('Done! \n')
     else:
-        print('Computing real FID statistics...', end=' ')
-        for imgs, _ in iter(torch.utils.data.DataLoader(dataset, batch_size=100)):
+        print('Computing real image FID statistics...', end=' ')
+        # utils.update_FID_statistics(FID, DataLoader(dataset, batch_size=100), is_real=True)
+        for imgs, _ in iter(DataLoader(dataset, batch_size=100)):
             # Scale image pixel values to range [0, 1]
             imgs = imgs / 255.0
             FID.update(imgs, is_real=True)
@@ -314,14 +312,14 @@ def main():
                 fake_imgs = G_net.generate_images(num_imgs=50)
 
                 # Compute and store current FID score
-                stats['FID score'] = compute_FID_score(FID, fake_imgs)
+                stats['FID score'] = utils.compute_FID_score(FID, fake_imgs)
 
                 # Create path to snapshot folder
                 save_path = os.path.join(ROOT_DIR, 'snapshots', run_name, 'epoch_' + str(ep))
                 os.makedirs(save_path, exist_ok=True)
 
                 # Save grid of generated fake images to snapshot folder
-                save_image_grid(fake_imgs[:16], save_path, nrow=4)
+                utils.save_image_grid(fake_imgs[:16], save_path, nrow=4)
                 del fake_imgs
 
                 # Save models to snapshot folder
@@ -336,8 +334,8 @@ def main():
             stats['D real'] = running_D_real / len(dataloader.sampler)
             stats['D fake'] = running_D_fake / len(dataloader.sampler)
 
-            print_training_statistics(stats, ep)
-            record_training_statistics(stats, tb_writer, ep)
+            utils.print_training_statistics(stats, ep)
+            utils.record_training_statistics(stats, tb_writer, ep)
 
             gc.collect()
             torch.cuda.empty_cache()
