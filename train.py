@@ -21,6 +21,8 @@ import matplotlib.pyplot as plt
 
 from torcheval.metrics import FrechetInceptionDistance
 
+import time
+
 
 # TODO: Implement training loop. Utilize at least DataParallel to split 
 # batch computaion to multiple GPUs. Consider using DistributedDataParallel
@@ -52,6 +54,14 @@ def parser() -> argparse.Namespace:
         dest='snapshot_frequency',
         default=10,
         help='The frequency in terms of epochs with which to take snapshot of current model.'
+    )
+
+    parser.add_argument(
+        '--num_workers',
+        type=int,
+        dest='num_workers',
+        default=0,
+        help='The number of worker processes for the dataloaders to use.'
     )
 
     parser.add_argument(
@@ -143,6 +153,7 @@ def main():
 
     epochs = args.epochs
     snap_freq = args.snapshot_frequency
+    num_workers = args.num_workers
     z_dim = args.z_dim
     w_dim = args.w_dim
     res = args.resolution
@@ -209,7 +220,7 @@ def main():
 
     # Load data
     dataset, _ = utils.load_images(os.path.join(ROOT_DIR, 'data', 'PokemonData'), res=res)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=args.num_workers)
 
     # Initialize Frechet Inception Distance object
     FID = FrechetInceptionDistance()
@@ -222,7 +233,6 @@ def main():
         print('Done! \n')
     else:
         print('Computing real image FID statistics...', end=' ')
-        # utils.update_FID_statistics(FID, DataLoader(dataset, batch_size=100), is_real=True)
         for imgs, _ in iter(DataLoader(dataset, batch_size=100)):
             # Scale image pixel values to range [0, 1]
             imgs = imgs / 255.0
