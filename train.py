@@ -223,26 +223,25 @@ def main():
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=args.num_workers)
 
     # Initialize Frechet Inception Distance object
-    FID = FrechetInceptionDistance()
+    FID = FrechetInceptionDistance(device=DEVICE)
     # Load FID object if it exists, otherwise compute the statistics of 
     # real image dataset and save FID object.
     fid_path = os.path.join(ROOT_DIR, 'models', 'fid_pokemon.pth')
     if os.path.exists(fid_path):
-        print('Loading FID...', end=' ')
+        print('Loading FID...', end=' ', flush=True)
         FID.load_state_dict(torch.load(fid_path, weights_only=True))
+        FID.to(DEVICE) # Make sure all attributes of loaded FID object are on the same device
         print('Done! \n')
     else:
-        print('Computing real image FID statistics...', end=' ')
-        for imgs, _ in iter(DataLoader(dataset, batch_size=100)):
-            # Scale image pixel values to range [0, 1]
-            imgs = imgs / 255.0
+        print('Computing real image FID statistics...', flush=True)
+        for imgs, _ in iter(tqdm(dataloader)):
+            # Move images to DEVICE and scale pixel values to range [0, 1]
+            imgs = imgs.to(DEVICE) / 255.0
             FID.update(imgs, is_real=True)
 
         os.makedirs(os.path.join(ROOT_DIR, 'models'), exist_ok=True)
         torch.save(FID.state_dict(), fid_path)
         print('Done! \n')
-    # Make sure all attributes of FID object are on the same device
-    FID.to(DEVICE)
 
     print('Starting training! \n')
     for ep in range(epochs):
