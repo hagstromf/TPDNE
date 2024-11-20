@@ -208,7 +208,7 @@ def main():
     G_loss = GeneratorLoss().to(DEVICE)
 
     # Load data
-    dataset, _ = utils.load_images(os.path.join(ROOT_DIR, 'data', 'PokemonData'), res=res, test_size=0.99)
+    dataset, _ = utils.load_images(os.path.join(ROOT_DIR, 'data', 'PokemonData'), res=res)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
 
     # Initialize Frechet Inception Distance object
@@ -308,18 +308,16 @@ def main():
             stats = {}
 
             if ep % snap_freq == 0:
-                # Generate fake images
-                fake_imgs = G_net.generate_images(num_imgs=50)
-
                 # Compute and store current FID score
-                stats['FID score'] = utils.compute_FID_score(FID, fake_imgs)
+                stats['FID score'] = utils.compute_FID_score(FID, G_net)
 
                 # Create path to snapshot folder
                 save_path = os.path.join(ROOT_DIR, 'snapshots', run_name, 'epoch_' + str(ep))
                 os.makedirs(save_path, exist_ok=True)
 
-                # Save grid of generated fake images to snapshot folder
-                utils.save_image_grid(fake_imgs[:16], save_path, nrow=4)
+                # Generate and save grid of fake images to snapshot folder
+                fake_imgs = G_net.generate_images(num_imgs=16)
+                utils.save_image_grid(fake_imgs, save_path, nrow=4)
                 del fake_imgs
 
                 # Save models to snapshot folder

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional, Dict
 
 from torcheval.metrics import FrechetInceptionDistance
+from src.stylegan2 import Generator
 
 import argparse
 import os
@@ -67,12 +68,21 @@ def record_training_statistics(stats: Dict[str, float], tb_writer: SummaryWriter
     for k, v in stats.items():
         tb_writer.add_scalar(k, v, epoch)
 
-def compute_FID_score(fid: FrechetInceptionDistance, fake_imgs: torch.Tensor) -> torch.Tensor:
+def compute_FID_score(fid: FrechetInceptionDistance, 
+                      G_net: Generator, 
+                      tot_num_imgs: int = 1000, 
+                      batch_size: int = 50) -> torch.Tensor:
     # Store state of FID statistics before updating fake image statistics
     fid_state = fid.state_dict()
 
-    # Update the FID statistics of fake images and compute current FID score
-    fid.update(fake_imgs, is_real=False)
+    # Update the FID statistics of fake images and compute current FID score.
+    # We update in small batches in order to avoid running out of memory when generating.
+    batches = tot_num_imgs // batch_size * [batch_size] 
+    if remainder := tot_num_imgs % batch_size:
+        batches.append(remainder)
+    for batch in batches:
+        fake_imgs = G_net.generate_images(num_imgs=batch)
+        fid.update(fake_imgs, is_real=False)
     fid_score =  fid.compute()
 
     # Reset FID statistics to defaults and load state from
