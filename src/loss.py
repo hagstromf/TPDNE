@@ -62,9 +62,7 @@ class DiscriminatorLoss(nn.Module):
                                    grad_outputs=torch.ones_like(logits_real),
                                    create_graph=True)[0]
 
-        penalty = grad.square().sum([1, 2, 3])
-        penalty = self.r1_gamma / 2 * grad.square().mean()
-
+        penalty = (self.r1_gamma / 2) * grad.square().sum([1, 2, 3]).mean()
         return penalty
     
     def forward(self, 
