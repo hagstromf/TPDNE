@@ -103,7 +103,7 @@ def parser() -> argparse.Namespace:
         '-r1',
         type=int,
         dest='r1_interval',
-        default=8,
+        default=16,
         help='The interval at which (lazy) R1 regularization is performed.'
     )
 
@@ -112,7 +112,7 @@ def parser() -> argparse.Namespace:
         '-pl',
         type=int,
         dest='pl_interval',
-        default=16,
+        default=8,
         help='The interval at which (lazy) path length regularization is performed.'
     )
 
