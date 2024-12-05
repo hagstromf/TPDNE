@@ -36,18 +36,12 @@ class GeneratorLoss(nn.Module):
     def forward(self, 
                 netD: nn.Module, 
                 fake_images: torch.Tensor, 
-                ws: torch.Tensor, 
-                do_reg: bool=False
-                ) -> tuple[torch.Tensor, torch.Tensor]:
+                ) -> torch.Tensor:
         
         logits = netD(fake_images)
         loss = F.binary_cross_entropy_with_logits(logits, torch.ones_like(logits))
 
-        pl_penalty = torch.tensor([0.])
-        if do_reg:
-            pl_penalty = self.pl_reg(fake_images, ws)
-
-        return loss, pl_penalty
+        return loss
     
 
 class DiscriminatorLoss(nn.Module):
@@ -55,8 +49,11 @@ class DiscriminatorLoss(nn.Module):
         super().__init__()
 
         self.r1_gamma = r1_gamma
+    
+    def r1_reg(self, real_images: torch.Tensor, netD: nn.Module) -> torch.Tensor:
+        real_images.requires_grad_(True)
+        logits_real = netD(real_images)
 
-    def r1_reg(self, real_images: torch.Tensor, logits_real: torch.Tensor) -> torch.Tensor:
         grad = torch.autograd.grad(logits_real,
                                    real_images,
                                    grad_outputs=torch.ones_like(logits_real),
@@ -64,19 +61,15 @@ class DiscriminatorLoss(nn.Module):
 
         penalty = (self.r1_gamma / 2) * grad.square().sum([1, 2, 3]).mean()
         return penalty
-    
+
     def forward(self, 
                 netD: nn.Module, 
                 real_images: torch.Tensor, 
                 fake_images: torch.Tensor, 
-                do_reg: bool=False
-                ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+                ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         
-        real_images_tmp = real_images.detach().requires_grad_(do_reg)
-        fake_images_tmp = fake_images.detach()
-        
-        logits_real = netD(real_images_tmp)
-        logits_fake = netD(fake_images_tmp)
+        logits_real = netD(real_images)
+        logits_fake = netD(fake_images.detach())
 
         D_real = F.sigmoid(logits_real).mean()
         D_fake = F.sigmoid(logits_fake).mean()
@@ -85,13 +78,8 @@ class DiscriminatorLoss(nn.Module):
         loss_fake = F.binary_cross_entropy_with_logits(logits_fake, torch.zeros_like(logits_fake))
 
         loss = loss_real + loss_fake
-
-        r1_penalty = torch.tensor([0.])
-        if do_reg:
-            r1_penalty = self.r1_reg(real_images_tmp, logits_real)
         
-        return loss, r1_penalty, D_real, D_fake
-
+        return loss, D_real, D_fake
 
 if __name__ == '__main__':
     pass

@@ -256,59 +256,60 @@ def main():
         for i, (imgs, _)  in enumerate(tqdm(iter(dataloader), desc=f'Epoch {ep}'), 1):
             # Move images to DEVICE and scale pixel values to range [0, 1]
             real_imgs = imgs.to(DEVICE) / 255.0
+            batch_size = real_imgs.shape[0]
             
             # Generate mini-batch of fake images and intermediate latent vectors (ws)
-            z = torch.randn((real_imgs.shape[0], z_dim), device=DEVICE)
+            z = torch.randn((batch_size, z_dim), device=DEVICE)
             fake_imgs, ws = G_net(z, style_mix_prob=0.9)
             del z
 
-            # Compute discriminator loss and regularization terms
-            do_r1_reg = i % r1_interval == 0
-            d_loss, r1_penalty, D_real, D_fake = D_loss(D_net, real_imgs, fake_imgs, do_reg=do_r1_reg)
+            # Perform main discriminator loss pass 
+            d_loss, D_real, D_fake = D_loss(D_net, real_imgs, fake_imgs)
+            running_d_loss += d_loss.item() * batch_size
+            running_D_real += D_real * batch_size
+            running_D_fake += D_fake * batch_size  
 
-            # Update running discriminator statistics
-            running_d_loss += d_loss.item() * real_imgs.shape[0]
-            running_r1_penalty += r1_penalty.item() * real_imgs.shape[0] 
-            running_D_real += D_real * real_imgs.shape[0]
-            running_D_fake += D_fake * real_imgs.shape[0]  
-            del real_imgs
-
-            # Perform backward pass of loss and optimization step on discriminator
             D_opt.zero_grad(set_to_none=True)
-            d_loss.backward(retain_graph=do_r1_reg)
+            d_loss.backward()
             D_opt.step()
             del d_loss
 
-            # Perform backward pass of R1 penalty and optimization step on discriminator
-            if do_r1_reg:
+            # Perform R1 regularization pass
+            if i % r1_interval == 0:
+                r1_penalty = r1_interval * D_loss.r1_reg(real_imgs, D_net)
+                running_r1_penalty += r1_penalty.item() * batch_size
+
                 D_opt.zero_grad(set_to_none=True)
-                r1_penalty = r1_interval * r1_penalty
                 r1_penalty.backward()
                 D_opt.step()
-            del r1_penalty
+                del r1_penalty
+            del real_imgs
 
-            # Compute generator loss and regularization terms
-            do_pl_reg = i % pl_interval == 0
-            g_loss, pl_penalty = G_loss(D_net, fake_imgs, ws, do_reg=do_pl_reg)
+            # Perform main generator loss pass
+            g_loss = G_loss(D_net, fake_imgs)
+            running_g_loss += g_loss.item() * batch_size
 
-            # Update running generator statistics
-            running_g_loss += g_loss.item() * fake_imgs.shape[0]
-            running_pl_penalty += pl_penalty.item() * fake_imgs.shape[0]
-            del fake_imgs, ws
-
-            # Perform backward pass of loss and optimization step on generator
             G_opt.zero_grad(set_to_none=True)
-            g_loss.backward(retain_graph=do_pl_reg)
+            g_loss.backward()
             G_opt.step()
             del g_loss
 
-            # Perform backward pass of path length penalty and optimization step on generator
-            if do_pl_reg:
+            # Perform path length regularization pass
+            if i % pl_interval == 0:
+                # Generate new mini-batch of fake images and intermediate latent vectors (ws)
+                # with updated generator
+                z = torch.randn((batch_size, z_dim), device=DEVICE)
+                fake_imgs, ws = G_net(z, style_mix_prob=0.9)
+                del z   
+                
+                pl_penalty = pl_interval * G_loss.pl_reg(fake_imgs, ws)
+                running_pl_penalty += pl_penalty.item() * batch_size
+
                 G_opt.zero_grad(set_to_none=True)
-                pl_penalty = pl_interval * pl_penalty
                 pl_penalty.backward()
                 G_opt.step()
-            del pl_penalty
+                del pl_penalty
+            del fake_imgs, ws
 
             gc.collect()
             torch.cuda.empty_cache()
